@@ -1,0 +1,26 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Rider / VS Code
+.idea/
+.vscode/
+
+# Publish output
+publish/
+*.pdb
+
+# User data (do NOT commit local config or logs)
+logs/
+config.json
+models/
+recordings/
+*.log
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,95 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:CapsWriterSharp.App.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="480"
+        x:Class="CapsWriterSharp.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="CapsWriter Sharp"
+        Width="720" Height="480"
+        MinWidth="520" MinHeight="360"
+        WindowStartupLocation="CenterScreen"
+        Icon="/Assets/tray.ico">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel />
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="16">
+
+        <!-- 标题 + 状态灯 -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+            <Ellipse Width="14" Height="14" Fill="{Binding StateBrush}" />
+            <TextBlock Text="{Binding StateLabel}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <TextBlock Text="•" Opacity="0.4" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding ShortcutHint}" Opacity="0.7" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- 分隔 -->
+        <Border Grid.Row="1" Height="1" Background="{DynamicResource SystemBaseLowColor}" Margin="0,12,0,12" />
+
+        <!-- 主内容：TabControl -->
+        <TabControl Grid.Row="2">
+            <TabItem Header="识别历史">
+                <Grid RowDefinitions="*,Auto">
+                    <ListBox Grid.Row="0"
+                             ItemsSource="{Binding History}"
+                             SelectionMode="Single">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Timestamp, StringFormat={}{0:HH:mm:ss}}"
+                                               Opacity="0.5" FontSize="11" />
+                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                        <Button Content="复制最新" Command="{Binding CopyLatestCommand}" />
+                        <Button Content="清空历史" Command="{Binding ClearHistoryCommand}" />
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="设置">
+                <ScrollViewer>
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="快捷键" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding ShortcutHint}" Opacity="0.75" />
+
+                        <TextBlock Text="模型目录" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="{Binding ModelDir}" Opacity="0.75" TextWrapping="Wrap" />
+
+                        <TextBlock Text="上屏模式" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="{Binding OutputModeLabel}" Opacity="0.75" />
+
+                        <TextBlock Text="强制粘贴应用" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="{Binding PasteAppsLabel}" Opacity="0.75" TextWrapping="Wrap" />
+
+                        <Border Height="1" Background="{DynamicResource SystemBaseLowColor}" Margin="0,12,0,12" />
+                        <TextBlock Text="P5 阶段将加入可视化编辑与热加载；当前请手工编辑 config.json。"
+                                   Opacity="0.55" TextWrapping="Wrap" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="日志">
+                <TextBox Text="{Binding LogText, Mode=OneWay}"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="NoWrap"
+                         FontFamily="Consolas,Menlo,monospace"
+                         FontSize="12" />
+            </TabItem>
+        </TabControl>
+
+        <!-- 底部按钮 -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="暂停/继续" Command="{Binding TogglePauseCommand}" />
+            <Button Content="最小化到托盘" Command="{Binding HideToTrayCommand}" />
+            <Button Content="退出" Command="{Binding ExitCommand}" />
+        </StackPanel>
+    </Grid>
+</Window>

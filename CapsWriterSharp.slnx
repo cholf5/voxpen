@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CapsWriterSharp.App/CapsWriterSharp.App.csproj" />
+    <Project Path="src/CapsWriterSharp.Cli/CapsWriterSharp.Cli.csproj" />
+    <Project Path="src/CapsWriterSharp.Core/CapsWriterSharp.Core.csproj" />
+    <Project Path="src/CapsWriterSharp.Platform.Windows/CapsWriterSharp.Platform.Windows.csproj" />
+  </Folder>
+</Solution>
