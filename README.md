@@ -1,4 +1,4 @@
-# CapsWriter Sharp
+# 声写 (VoxPen)
 
 一个用 C# / Avalonia 重写的离线中文语音输入法，脱胎于 [HaujetZhao/CapsWriter-Offline](https://github.com/HaujetZhao/CapsWriter-Offline)。
 
@@ -30,13 +30,13 @@
 
 ## 快速开始（预编译版）
 
-1. 下载 Release 中的 `CapsWriter-Sharp-win-x64.zip` 并解压到任意目录（例如 `D:\Apps\CapsWriter\`）。
+1. 下载 Release 中的 `VoxPen-win-x64.zip` 并解压到任意目录（例如 `D:\Apps\VoxPen\`）。
 2. 下载 Paraformer 模型（约 229 MB）：推荐从原项目预打包的 [HaujetZhao/CapsWriter-Offline releases · models](https://github.com/HaujetZhao/CapsWriter-Offline/releases/tag/models) 下载 `Paraformer.zip`（含国内网盘镜像，SHA256 `a12a3f97...`）。也可用上游 [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases) 的 `sherpa-onnx-paraformer-zh-2023-09-14`。
 3. 解压后是一个 `speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-onnx/` 目录，把**它里面的内容**（不是这个目录本身）摊平到应用目录的 `models/paraformer/` 下：
 
    ```
-   D:\Apps\CapsWriter\
-     ├─ CapsWriterSharp.App.exe
+   D:\Apps\VoxPen\
+     ├─ VoxPen.App.exe
      ├─ config.json                  ← 首次启动自动生成
      ├─ hot-rule.txt                 ← publish 时自动附带；用户可编辑
      └─ models/
@@ -46,7 +46,7 @@
            └─ ...                    (am.mvn / config.yaml 等其余附属文件全部保留)
    ```
 
-4. 双击 `CapsWriterSharp.App.exe` 启动。任务栏右下角会出现一个蓝底 "C" 托盘图标。首次启动模型加载约 2–3 秒。
+4. 双击 `VoxPen.App.exe` 启动。任务栏右下角会出现一个蓝底 "C" 托盘图标。首次启动模型加载约 2–3 秒。
 5. 把鼠标点到任意可输入的位置，**按住 CapsLock 说话，松开自动上屏**。
 
 ---
@@ -159,7 +159,7 @@ recordings/2026/07/assets/20260709-223245_你好世界.wav
 把一段/多段音频转成 `.txt / .srt / .json / .merge.txt` 四件套。默认按 60 秒切片 + 4 秒重叠，`SegmentMerger` 用 SequenceMatcher 做 token 级去重拼接，`SubtitleAligner` 输出标准 SRT 时间戳。
 
 ```bash
-dotnet run --project src/CapsWriterSharp.Cli -- transcribe path/to/audio.mp3 another.wav
+dotnet run --project src/VoxPen.Cli -- transcribe path/to/audio.mp3 another.wav
 # 可选参数：
 #   --seg-duration 60   --seg-overlap 4
 #   --no-srt --no-json --no-txt --merge
@@ -204,7 +204,7 @@ GitHub|吉他不
 ### xUnit 单元测试套件
 
 ```bash
-dotnet test tests/CapsWriterSharp.Core.Tests/
+dotnet test tests/VoxPen.Core.Tests/
 ```
 
 覆盖 SequenceMatcher / SmartSplit / SegmentMerger / SubtitleAligner / SrtWriter / TranscriptJsonWriter / PhonemeExtractor / FastRag / PhonemeCorrector / HotwordFile / HotRuleReplacer / TrashPuncCleaner / DiaryWriter / AudioSegmenter / FileTranscriber，共 **122 test cases 全绿**。
@@ -216,13 +216,13 @@ dotnet test tests/CapsWriterSharp.Core.Tests/
 前置：.NET 8 SDK。
 
 ```bash
-dotnet build src/CapsWriterSharp.App
+dotnet build src/VoxPen.App
 ```
 
 ### 打包单文件 exe（Windows）
 
 ```bash
-dotnet publish src/CapsWriterSharp.App/CapsWriterSharp.App.csproj ^
+dotnet publish src/VoxPen.App/VoxPen.App.csproj ^
   -c Release -r win-x64 --self-contained true ^
   -p:PublishSingleFile=true ^
   -p:IncludeNativeLibrariesForSelfExtract=true ^
@@ -230,7 +230,7 @@ dotnet publish src/CapsWriterSharp.App/CapsWriterSharp.App.csproj ^
   -o publish/win-x64
 ```
 
-产物：`publish/win-x64/CapsWriterSharp.App.exe`（P7 起约 100 MB，P6 时约 53 MB —— 增大来自 NAudio + Toolkit.Uwp.Notifications + ToolGood.Words.Pinyin 等 P7 依赖。自包含 .NET 运行时 + sherpa-onnx / PortAudio / SharpHook / MediaFoundation 所有原生依赖）。
+产物：`publish/win-x64/VoxPen.App.exe`（P7 起约 100 MB，P6 时约 53 MB —— 增大来自 NAudio + Toolkit.Uwp.Notifications + ToolGood.Words.Pinyin 等 P7 依赖。自包含 .NET 运行时 + sherpa-onnx / PortAudio / SharpHook / MediaFoundation 所有原生依赖）。
 
 publish 目录会自动带上 `hot-rule.txt`；`config.json` 首次运行会在 exe 同目录自动生成默认值。用户只需自己放 `models/paraformer/` 就能开箱即用。
 
@@ -238,25 +238,25 @@ publish 目录会自动带上 `hot-rule.txt`；`config.json` 首次运行会在 
 
 ```bash
 # 后处理端到端（HotRule + TrashPunc）
-dotnet run --project src/CapsWriterSharp.Cli -- test-postprocess
+dotnet run --project src/VoxPen.Cli -- test-postprocess
 
 # 音素 RAG 冒烟（内置样例，不加载模型）
-dotnet run --project src/CapsWriterSharp.Cli -- test-hotword
+dotnet run --project src/VoxPen.Cli -- test-hotword
 
 # Markdown 日记冒烟（写到临时目录）
-dotnet run --project src/CapsWriterSharp.Cli -- test-diary
+dotnet run --project src/VoxPen.Cli -- test-diary
 
 # 段合并冒烟（模拟 3 段重叠文本）
-dotnet run --project src/CapsWriterSharp.Cli -- test-merger
+dotnet run --project src/VoxPen.Cli -- test-merger
 
 # 从 WAV 直接识别
-dotnet run --project src/CapsWriterSharp.Cli -- --file models/paraformer/example/asr_example.wav
+dotnet run --project src/VoxPen.Cli -- --file models/paraformer/example/asr_example.wav
 
 # 批量转录
-dotnet run --project src/CapsWriterSharp.Cli -- transcribe path/to/audio.mp3
+dotnet run --project src/VoxPen.Cli -- transcribe path/to/audio.mp3
 
 # 无 UI 常驻模式（真实 CapsLock 监听）
-dotnet run --project src/CapsWriterSharp.Cli -- run
+dotnet run --project src/VoxPen.Cli -- run
 ```
 
 ---
@@ -264,13 +264,13 @@ dotnet run --project src/CapsWriterSharp.Cli -- run
 ## 项目结构
 
 ```
-CapsWriterSharp/
+VoxPen/
 ├─ src/
-│  ├─ CapsWriterSharp.Core/              抽象接口 + Pipeline 状态机 + 后处理 + 归档 + 配置 + 转录/日记/音素 RAG
-│  ├─ CapsWriterSharp.Platform.Windows/  SharpHook + PortAudio + sherpa-onnx + SendInput + MediaFoundation + Toast
-│  ├─ CapsWriterSharp.App/               Avalonia UI + Tray + 组合根 (AppHost)
-│  └─ CapsWriterSharp.Cli/               无 UI 冒烟测试 + 批量转录
-├─ tests/CapsWriterSharp.Core.Tests/     xUnit 测试套件（122 tests）
+│  ├─ VoxPen.Core/              抽象接口 + Pipeline 状态机 + 后处理 + 归档 + 配置 + 转录/日记/音素 RAG
+│  ├─ VoxPen.Platform.Windows/  SharpHook + PortAudio + sherpa-onnx + SendInput + MediaFoundation + Toast
+│  ├─ VoxPen.App/               Avalonia UI + Tray + 组合根 (AppHost)
+│  └─ VoxPen.Cli/               无 UI 冒烟测试 + 批量转录
+├─ tests/VoxPen.Core.Tests/     xUnit 测试套件（124 tests）
 ├─ models/paraformer/                    你自己放模型
 ├─ hot-rule.txt                          可选，与原项目 100% 兼容（正则替换）
 ├─ hot.txt                               可选，音素 RAG 热词（原项目格式）
@@ -300,7 +300,7 @@ P7 后仍未实现（下一轮 v2 计划）：
 ## 权限提示
 
 - **首次启动**会请求麦克风权限（Windows 10/11 系统对话框）
-- **向管理员窗口输入**：目标窗口以管理员启动时，CapsWriter 也需以管理员启动才能 SendInput
+- **向管理员窗口输入**：目标窗口以管理员启动时，声写也需以管理员启动才能 SendInput
 - **杀毒软件**：单文件 exe 内含大量本地 DLL，可能被误报，请添加到白名单
 
 ---

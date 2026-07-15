@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VoxPen.App/VoxPen.App.csproj" />
+    <Project Path="src/VoxPen.Cli/VoxPen.Cli.csproj" />
+    <Project Path="src/VoxPen.Core/VoxPen.Core.csproj" />
+    <Project Path="src/VoxPen.Platform.Windows/VoxPen.Platform.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VoxPen.Core.Tests/VoxPen.Core.Tests.csproj" />
+  </Folder>
+</Solution>
