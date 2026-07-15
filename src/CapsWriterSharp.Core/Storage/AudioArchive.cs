@@ -20,8 +20,11 @@ public sealed class AudioArchive
         _nameLen = Math.Max(0, nameLength);
     }
 
-    /// <summary>把一段音频与识别结果存档；失败静默（归档不应影响主流程）。</summary>
-    public async Task SaveAsync(
+    /// <summary>
+    /// 把一段音频与识别结果存档；失败静默（归档不应影响主流程）。
+    /// 成功返回 wav 文件绝对路径，异常/空样本返回 null。
+    /// </summary>
+    public async Task<string?> SaveAsync(
         ReadOnlyMemory<float> samples,
         string recognizedText,
         DateTime timestampLocal,
@@ -30,6 +33,8 @@ public sealed class AudioArchive
     {
         try
         {
+            if (samples.Length == 0) return null;
+
             var yearMonth = Path.Combine(_rootDir,
                 timestampLocal.Year.ToString("D4"),
                 timestampLocal.Month.ToString("D2"),
@@ -48,10 +53,12 @@ public sealed class AudioArchive
                 await File.WriteAllTextAsync(txtPath, recognizedText, cancellationToken)
                     .ConfigureAwait(false);
             }
+            return wavPath;
         }
         catch
         {
             // 归档失败不能影响用户主流程
+            return null;
         }
     }
 

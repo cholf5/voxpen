@@ -16,7 +16,7 @@
         <vm:MainWindowViewModel />
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="16">
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="16">
 
         <!-- 标题 + 状态灯 -->
         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
@@ -26,11 +26,24 @@
             <TextBlock Text="{Binding ShortcutHint}" Opacity="0.7" VerticalAlignment="Center" />
         </StackPanel>
 
+        <Border Grid.Row="1"
+                IsVisible="{Binding HasStartupError}"
+                Background="#33D32F2F"
+                BorderBrush="#FFD32F2F"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="10"
+                Margin="0,10,0,2">
+            <TextBlock Text="{Binding StartupError}"
+                       Foreground="#FFD32F2F"
+                       TextWrapping="Wrap" />
+        </Border>
+
         <!-- 分隔 -->
-        <Border Grid.Row="1" Height="1" Background="{DynamicResource SystemBaseLowColor}" Margin="0,12,0,12" />
+        <Border Grid.Row="2" Height="1" Background="{DynamicResource SystemBaseLowColor}" Margin="0,12,0,12" />
 
         <!-- 主内容：TabControl -->
-        <TabControl Grid.Row="2">
+        <TabControl Grid.Row="3">
             <TabItem Header="识别历史">
                 <Grid RowDefinitions="*,Auto">
                     <ListBox Grid.Row="0"
@@ -86,7 +99,7 @@
         </TabControl>
 
         <!-- 底部按钮 -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,12,0,0">
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button Content="暂停/继续" Command="{Binding TogglePauseCommand}" />
             <Button Content="最小化到托盘" Command="{Binding HideToTrayCommand}" />
             <Button Content="退出" Command="{Binding ExitCommand}" />

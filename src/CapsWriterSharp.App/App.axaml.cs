@@ -11,6 +11,7 @@ using CapsWriterSharp.App.Services;
 using CapsWriterSharp.App.ViewModels;
 using CapsWriterSharp.App.Views;
 using CapsWriterSharp.Core.Pipeline;
+using CapsWriterSharp.Core.Config;
 
 namespace CapsWriterSharp.App;
 
@@ -89,7 +90,9 @@ public partial class App : Application
         catch (Exception ex)
         {
             Debug.WriteLine($"[App] LoadAndStartAsync failed: {ex}");
-            _host.Emit($"启动失败：{ex.Message}");
+            var message = StartupErrorFormatter.Format(ex);
+            _host.Emit(message);
+            _viewModel?.SetStartupError(message);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 _mainWindow?.Show();

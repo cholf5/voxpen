@@ -32,7 +32,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private string _outputModeLabel = "模拟打字";
     [ObservableProperty] private string _pasteAppsLabel = "";
     [ObservableProperty] private string _logText = "";
+    [ObservableProperty] private string _startupError = "";
     [ObservableProperty] private bool _isPaused;
+
+    public bool HasStartupError => !string.IsNullOrEmpty(StartupError);
 
     public bool IsExiting { get; private set; }
 
@@ -98,6 +101,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
         LogText = _log.ToString();
     }
+
+    public void SetStartupError(string message) => StartupError = message;
+
+    partial void OnStartupErrorChanged(string value) => OnPropertyChanged(nameof(HasStartupError));
 
     [RelayCommand]
     private async Task CopyLatestAsync()

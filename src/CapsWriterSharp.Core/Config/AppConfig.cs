@@ -22,14 +22,29 @@ public sealed class AppConfig
     /// <summary>后处理设置（末尾标点、hot-rule 等）。</summary>
     public PostprocessConfig Postprocess { get; set; } = new();
 
+    /// <summary>批量文件转录设置。</summary>
+    public TranscribeConfig Transcribe { get; set; } = new();
+
+    /// <summary>音素 RAG 热词设置（hot.txt）。</summary>
+    public HotwordConfig Hotword { get; set; } = new();
+
+    /// <summary>系统通知（Toast）设置。</summary>
+    public NotificationConfig Notification { get; set; } = new();
+
     /// <summary>日志级别：Trace/Debug/Info/Warn/Error。</summary>
     public string LogLevel { get; set; } = "Information";
 }
 
 public sealed class ShortcutConfig
 {
-    /// <summary>抽象键名，例如 "caps_lock"。</summary>
+    /// <summary>抽象键名，例如 "caps_lock"。当 <see cref="Keys"/> 为空时启用。</summary>
     public string Key { get; set; } = "caps_lock";
+
+    /// <summary>
+    /// 多快捷键绑定，例如 <c>["caps_lock", "x2"]</c>。非空时优先于 <see cref="Key"/>。
+    /// 支持 <c>caps_lock/f13/f14/f15/f16/x1/x2</c> 等；具体清单由平台层的 KeyNameMapper 决定。
+    /// </summary>
+    public List<string> Keys { get; set; } = new();
 
     /// <summary>是否抑制系统默认行为（CapsLock 不切换大小写）。</summary>
     public bool Suppress { get; set; } = true;
@@ -48,6 +63,9 @@ public sealed class AudioConfig
 
     /// <summary>录音文件名保留识别结果前多少个字。</summary>
     public int AudioNameLength { get; set; } = 20;
+
+    /// <summary>是否把每次识别追加写入 <c>recordings/YYYY/MM/DD.md</c> 日记。</summary>
+    public bool DiaryEnabled { get; set; } = true;
 }
 
 public sealed class AsrConfig
@@ -100,4 +118,55 @@ public sealed class PostprocessConfig
 
     /// <summary>对这些进程强制清理末尾标点。</summary>
     public List<string> TrashPuncApps { get; set; } = new() { "WeiXin.exe" };
+}
+
+public sealed class TranscribeConfig
+{
+    /// <summary>批量转录时每段音频长度（秒）。</summary>
+    public double SegDurationSeconds { get; set; } = 60.0;
+
+    /// <summary>相邻段重叠长度（秒），用于稳健拼接。</summary>
+    public double SegOverlapSeconds { get; set; } = 4.0;
+
+    /// <summary>是否生成 SRT 字幕。</summary>
+    public bool SaveSrt { get; set; } = true;
+
+    /// <summary>是否生成分行 TXT。</summary>
+    public bool SaveTxt { get; set; } = true;
+
+    /// <summary>是否生成含 timestamps/tokens 的 JSON。</summary>
+    public bool SaveJson { get; set; } = true;
+
+    /// <summary>是否额外生成一行 <c>.merge.txt</c>（未分行原文）。</summary>
+    public bool SaveMerge { get; set; } = false;
+}
+
+public sealed class HotwordConfig
+{
+    /// <summary>是否启用音素 RAG 热词纠错。</summary>
+    public bool EnablePhonemeRag { get; set; } = true;
+
+    /// <summary>hot.txt 文件路径（相对应用根目录）。</summary>
+    public string HotwordPath { get; set; } = "hot.txt";
+
+    /// <summary>匹配阈值（≥ 此值视为真实替换）。</summary>
+    public double MatchThreshold { get; set; } = 0.85;
+
+    /// <summary>相似阈值（≥ 此值仅提示，不替换）。</summary>
+    public double SimilarThreshold { get; set; } = 0.6;
+}
+
+public sealed class NotificationConfig
+{
+    /// <summary>是否启用系统 Toast 通知。</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>录音开始时弹通知（默认关，避免干扰）。</summary>
+    public bool ShowOnRecordingStart { get; set; } = false;
+
+    /// <summary>识别完成时弹通知。</summary>
+    public bool ShowOnResult { get; set; } = true;
+
+    /// <summary>发生错误时弹通知。</summary>
+    public bool ShowOnError { get; set; } = true;
 }

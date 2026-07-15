@@ -5,4 +5,7 @@
     <Project Path="src/CapsWriterSharp.Core/CapsWriterSharp.Core.csproj" />
     <Project Path="src/CapsWriterSharp.Platform.Windows/CapsWriterSharp.Platform.Windows.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CapsWriterSharp.Core.Tests/CapsWriterSharp.Core.Tests.csproj" />
+  </Folder>
 </Solution>

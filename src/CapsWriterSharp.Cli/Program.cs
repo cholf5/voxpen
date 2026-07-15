@@ -2,8 +2,11 @@ using System.Diagnostics;
 using CapsWriterSharp.Cli;
 using CapsWriterSharp.Core.Abstractions;
 using CapsWriterSharp.Core.Config;
+using CapsWriterSharp.Core.Hotword;
+using CapsWriterSharp.Core.Hotword.Phoneme;
 using CapsWriterSharp.Core.Pipeline;
 using CapsWriterSharp.Core.Storage;
+using CapsWriterSharp.Core.Transcribe;
 using CapsWriterSharp.Platform.Windows.Audio;
 using CapsWriterSharp.Platform.Windows.Hooks;
 using CapsWriterSharp.Platform.Windows.Recognition;
@@ -13,6 +16,8 @@ using CapsWriterSharp.Platform.Windows.Text;
 // 无参数 / interactive : 交互式录音 → 识别（P2 用；stdin 触发）
 // --file <path>        : 直接识别 wav（P2 用）
 // run                  : 常驻监听 CapsLock，按住说话松开上屏（P3 端到端）
+// transcribe <files>   : 批量文件转录（P7）
+// test-hotword / test-diary / test-merger : 冒烟命令，不加载模型
 // --model <dir>        : 覆盖模型目录
 // --device <name>      : 偏好的输入设备名
 // --paste              : run 模式下默认使用剪贴板粘贴而非模拟打字
@@ -25,6 +30,10 @@ bool paste = false;
 bool suppress = true;
 int autoExitSecs = 0;
 
+// transcribe 专用参数
+var transcribeInputs = new List<string>();
+var transcribeConfig = new TranscribeConfig();
+
 for (int i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -32,13 +41,34 @@ for (int i = 0; i < args.Length; i++)
         case "run": mode = "run"; break;
         case "interactive": mode = "interactive"; break;
         case "test-postprocess": mode = "test-postprocess"; break;
+        case "test-hotword": mode = "test-hotword"; break;
+        case "test-diary": mode = "test-diary"; break;
+        case "test-merger": mode = "test-merger"; break;
+        case "transcribe": mode = "transcribe"; break;
         case "--file" when i + 1 < args.Length: filePath = args[++i]; mode = "file"; break;
         case "--model" when i + 1 < args.Length: modelDir = args[++i]; break;
         case "--device" when i + 1 < args.Length: deviceName = args[++i]; break;
         case "--paste": paste = true; break;
         case "--no-suppress": suppress = false; break;
         case "--auto-exit-secs" when i + 1 < args.Length: autoExitSecs = int.Parse(args[++i]); break;
+        case "--seg-duration" when i + 1 < args.Length:
+            transcribeConfig.SegDurationSeconds = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+            break;
+        case "--seg-overlap" when i + 1 < args.Length:
+            transcribeConfig.SegOverlapSeconds = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+            break;
+        case "--no-srt": transcribeConfig.SaveSrt = false; break;
+        case "--no-json": transcribeConfig.SaveJson = false; break;
+        case "--no-txt": transcribeConfig.SaveTxt = false; break;
+        case "--merge": transcribeConfig.SaveMerge = true; break;
         case "-h" or "--help": PrintHelp(); return 0;
+        default:
+            // transcribe 模式下，未识别的裸参数当作输入文件
+            if (mode == "transcribe" && !args[i].StartsWith("-"))
+            {
+                transcribeInputs.Add(args[i]);
+            }
+            break;
     }
 }
 
@@ -46,10 +76,11 @@ Console.WriteLine("CapsWriter-Sharp CLI");
 Console.WriteLine($"Mode           : {mode}");
 Console.WriteLine($"Model dir      : {Path.GetFullPath(modelDir)}");
 
-if (mode == "test-postprocess")
-{
-    return RunPostProcessTest();
-}
+// 不需要模型的冒烟命令，先短路
+if (mode == "test-postprocess") return RunPostProcessTest();
+if (mode == "test-hotword") return RunHotwordTest();
+if (mode == "test-diary") return RunDiaryTest();
+if (mode == "test-merger") return RunMergerTest();
 
 var config = new AppConfig
 {
@@ -79,6 +110,10 @@ Console.WriteLine($"OK ({loadSw.ElapsedMilliseconds} ms)");
 if (mode == "file")
 {
     return await RunFileModeAsync(filePath!, engine);
+}
+if (mode == "transcribe")
+{
+    return await RunTranscribeModeAsync(engine, transcribeInputs, transcribeConfig);
 }
 if (mode == "interactive")
 {
@@ -260,6 +295,230 @@ static void PrintHelp()
     Console.WriteLine("  CapsWriterSharp.Cli run [--paste] [--no-suppress]");
     Console.WriteLine("                                                 live: hold CapsLock to dictate");
     Console.WriteLine("  CapsWriterSharp.Cli --file <path.wav>          recognize a WAV file");
+    Console.WriteLine("  CapsWriterSharp.Cli transcribe <files...>      batch transcribe (60s/4s overlap)");
+    Console.WriteLine("       [--seg-duration N] [--seg-overlap N] [--no-srt] [--no-json] [--no-txt] [--merge]");
+    Console.WriteLine("  CapsWriterSharp.Cli test-postprocess           smoke: hot-rule + trash-punc");
+    Console.WriteLine("  CapsWriterSharp.Cli test-hotword               smoke: phoneme RAG");
+    Console.WriteLine("  CapsWriterSharp.Cli test-diary                 smoke: diary writer");
+    Console.WriteLine("  CapsWriterSharp.Cli test-merger                smoke: segment merger");
     Console.WriteLine("  CapsWriterSharp.Cli --model <dir>              override model directory");
     Console.WriteLine("  CapsWriterSharp.Cli --device <name substring>  pick input device");
+}
+
+// -------------- P7 新增：批量转录 --------------
+
+static async Task<int> RunTranscribeModeAsync(IAsrEngine engine, List<string> files, TranscribeConfig cfg)
+{
+    if (files.Count == 0)
+    {
+        Console.Error.WriteLine("transcribe: no input files.");
+        return 3;
+    }
+
+    // hot-rule.txt + hot.txt 走应用根目录
+    var baseDir = AppContext.BaseDirectory;
+    var hotRulePath = Path.Combine(baseDir, "hot-rule.txt");
+    var hotwordPath = Path.Combine(baseDir, "hot.txt");
+    var hotRule = HotRuleReplacer.Load(hotRulePath);
+    Console.WriteLine($"  hot-rule.txt : {hotRule.RuleCount} 条");
+
+    PhonemeCorrector? phonemeCorrector = null;
+    if (File.Exists(hotwordPath))
+    {
+        try
+        {
+            var pc = new PhonemeCorrector();
+            pc.UpdateHotwordsFromText(File.ReadAllText(hotwordPath));
+            phonemeCorrector = pc;
+            Console.WriteLine($"  hot.txt      : {pc.HotwordCount} 条");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  hot.txt load failed: {ex.Message}");
+        }
+    }
+
+    // 简单日志适配
+    var logSink = new ConsoleLogSink();
+    // 组装解码器：优先 MediaFoundation（支持 mp3/m4a/wav 等），失败退到 WavAudioDecoder
+    IAudioDecoder decoder;
+    try
+    {
+        decoder = new CapsWriterSharp.Platform.Windows.Audio.MediaFoundationAudioDecoder();
+    }
+    catch
+    {
+        decoder = WavAudioDecoder.Instance;
+    }
+
+    var transcriber = new FileTranscriber(engine, decoder, cfg, hotRule, phonemeCorrector, logSink);
+
+    int ok = 0, fail = 0;
+    foreach (var f in files)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"== {f} ==");
+        try
+        {
+            var res = await transcriber.TranscribeAsync(f);
+            Console.WriteLine($"  text: {res.Text}");
+            foreach (var w in res.WrittenFiles)
+            {
+                Console.WriteLine($"  wrote: {w}");
+            }
+            ok++;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  FAILED: {ex.Message}");
+            fail++;
+        }
+    }
+
+    Console.WriteLine();
+    Console.WriteLine($"Done. ok={ok}  failed={fail}");
+    return fail == 0 ? 0 : 4;
+}
+
+// -------------- P7 新增：冒烟命令 --------------
+
+static int RunHotwordTest()
+{
+    Console.WriteLine();
+    Console.WriteLine("== Phoneme RAG smoke test ==");
+    var hotSrc = string.Join("\n", new[]
+    {
+        "# 内置样例 hot.txt",
+        "撒贝宁",
+        "北大青鸟",
+        "iPhone",
+        "西安",
+        "先|xiān|xian",
+        "GitHub",
+    });
+
+    var corrector = new PhonemeCorrector(threshold: 0.75);
+    var loaded = corrector.UpdateHotwordsFromText(hotSrc);
+    Console.WriteLine($"  loaded {loaded} hotwords");
+
+    var cases = new (string input, string expected)[]
+    {
+        ("撒贝宁在央视工作", "撒贝宁"),
+        ("我去西安玩", "西安"),
+        ("苹果发布了iphone", "iPhone"),
+        ("上传到github", "GitHub"),
+    };
+    int pass = 0;
+    foreach (var (input, expected) in cases)
+    {
+        var result = corrector.Correct(input);
+        var ok = result.Text.Contains(expected);
+        if (ok) pass++;
+        Console.WriteLine($"  [{(ok ? "OK" : "FAIL")}] '{input}' -> '{result.Text}' (need '{expected}')");
+    }
+    Console.WriteLine($"Cases: {pass}/{cases.Length}");
+    return pass == cases.Length ? 0 : 1;
+}
+
+static int RunDiaryTest()
+{
+    Console.WriteLine();
+    Console.WriteLine("== Diary writer smoke test ==");
+    var tmp = Path.Combine(Path.GetTempPath(), "cws-diary-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tmp);
+    try
+    {
+        var diary = new DiaryWriter(tmp);
+        var ts = new DateTime(2026, 7, 9, 12, 34, 56);
+        var mdPath = diary.Write("测试内容 hello", ts);
+        var mdPath2 = diary.Write("第二条", ts.AddMinutes(1),
+            audioPath: Path.Combine(tmp, "2026", "07", "assets", "clip.wav"));
+
+        if (mdPath != mdPath2)
+        {
+            Console.WriteLine($"  FAIL: expected same path, got {mdPath} vs {mdPath2}");
+            return 1;
+        }
+        var content = File.ReadAllText(mdPath);
+        Console.WriteLine("  --- md content ---");
+        Console.WriteLine(content);
+        Console.WriteLine("  --- end ---");
+
+        var checks = new (string label, bool ok)[]
+        {
+            ("首次写入含 header", content.Contains("正则表达式 Tip")),
+            ("含首条文本", content.Contains("测试内容 hello")),
+            ("含第二条", content.Contains("第二条")),
+            ("含时间戳", content.Contains("12:34:56")),
+            ("含相对音频链接", content.Contains("assets/clip.wav")),
+            ("header 只出现一次", content.Split("正则表达式 Tip").Length == 2),
+        };
+        int pass = 0;
+        foreach (var (label, ok) in checks)
+        {
+            if (ok) pass++;
+            Console.WriteLine($"  [{(ok ? "OK" : "FAIL")}] {label}");
+        }
+        return pass == checks.Length ? 0 : 1;
+    }
+    finally
+    {
+        try { Directory.Delete(tmp, recursive: true); } catch { }
+    }
+}
+
+static int RunMergerTest()
+{
+    Console.WriteLine();
+    Console.WriteLine("== Segment merger smoke test ==");
+
+    // 三段重叠文本
+    var a = "你好世界这是第一段落尾";
+    var b = "落尾第二段中";
+    var c = "段中第三段末";
+    var m1 = CapsWriterSharp.Core.Transcribe.SegmentMerger.MergeText(a, b);
+    var m2 = CapsWriterSharp.Core.Transcribe.SegmentMerger.MergeText(m1, c);
+    Console.WriteLine($"  step1: '{m1}'");
+    Console.WriteLine($"  step2: '{m2}'");
+
+    // 相邻段重叠应被吸收
+    var luoWei = System.Text.RegularExpressions.Regex.Matches(m2, "落尾").Count;
+    var duanZhong = System.Text.RegularExpressions.Regex.Matches(m2, "段中").Count;
+    var checks = new (string label, bool ok)[]
+    {
+        ("包含 '你好世界'", m2.Contains("你好世界")),
+        ("包含 '第三段末'", m2.Contains("第三段末")),
+        ("重叠 '落尾' ≤1 次", luoWei <= 1),
+        ("重叠 '段中' ≤1 次", duanZhong <= 1),
+    };
+    int pass = 0;
+    foreach (var (label, ok) in checks)
+    {
+        if (ok) pass++;
+        Console.WriteLine($"  [{(ok ? "OK" : "FAIL")}] {label}");
+    }
+
+    // Token 拼接冒烟：三段 token+timestamp
+    var t1 = CapsWriterSharp.Core.Transcribe.SegmentMerger.MergeTokens(
+        Array.Empty<string>(), Array.Empty<float>(),
+        new[] { "你", "好", "世", "界" }, new[] { 0f, 0.2f, 0.4f, 0.6f },
+        offsetSeconds: 0, overlapSeconds: 4, isFirstSegment: true);
+    var t2 = CapsWriterSharp.Core.Transcribe.SegmentMerger.MergeTokens(
+        t1.Tokens, t1.Timestamps,
+        new[] { "世", "界", "你", "在" }, new[] { 0f, 0.2f, 0.4f, 0.6f },
+        offsetSeconds: 0.4, overlapSeconds: 4, isFirstSegment: false);
+    Console.WriteLine($"  tokens after 2 segs: [{string.Join(" ", t2.Tokens)}]");
+    var tokenOk = string.Concat(t2.Tokens).Contains("你好世界你在");
+    Console.WriteLine($"  [{(tokenOk ? "OK" : "FAIL")}] token merge deduped overlap");
+    if (tokenOk) pass++;
+
+    var total = checks.Length + 1;
+    Console.WriteLine($"Cases: {pass}/{total}");
+    return pass == total ? 0 : 1;
+}
+
+sealed class ConsoleLogSink : FileTranscriber.ILogSink
+{
+    public void OnInfo(string message) => Console.WriteLine(message);
+    public void OnWarn(string message) => Console.WriteLine("[warn] " + message);
 }

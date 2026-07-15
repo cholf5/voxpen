@@ -1,15 +1,20 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using CapsWriterSharp.Core.Abstractions;
 using CapsWriterSharp.Core.Config;
 using CapsWriterSharp.Core.Hotword;
+using CapsWriterSharp.Core.Hotword.Phoneme;
+using CapsWriterSharp.Core.Notification;
 using CapsWriterSharp.Core.Pipeline;
 using CapsWriterSharp.Core.Postprocess;
 using CapsWriterSharp.Core.Storage;
 using CapsWriterSharp.Platform.Windows.Audio;
 using CapsWriterSharp.Platform.Windows.Hooks;
+using CapsWriterSharp.Platform.Windows.Notifications;
 using CapsWriterSharp.Platform.Windows.Recognition;
 using CapsWriterSharp.Platform.Windows.Text;
 
@@ -39,12 +44,17 @@ public sealed class AppHost : IDisposable
     private readonly WindowsTextOutput _output;
     private readonly WindowsForegroundApp _foreground;
     private readonly AudioArchive _archive;
+    private readonly DiaryWriter? _diary;
+    private readonly PhonemeCorrector? _phonemeCorrector;
+    private readonly INotificationService _notifier;
+    private readonly IReadOnlyList<string> _hotkeyNames;
 
     private HotRuleReplacer _hotRule = HotRuleReplacer.Empty;
     private TrashPuncCleaner _trashPunc;
 
     private DebouncedFileWatcher? _hotRuleWatcher;
     private DebouncedFileWatcher? _configWatcher;
+    private DebouncedFileWatcher? _hotwordWatcher;
 
     private bool _disposed;
 
@@ -55,11 +65,15 @@ public sealed class AppHost : IDisposable
                     string configPath,
                     AppConfig config,
                     WindowsGlobalHotkey hotkey,
+                    IReadOnlyList<string> hotkeyNames,
                     WindowsAudioCapture capture,
                     ParaformerEngine asr,
                     WindowsTextOutput output,
                     WindowsForegroundApp foreground,
                     AudioArchive archive,
+                    DiaryWriter? diary,
+                    PhonemeCorrector? phonemeCorrector,
+                    INotificationService notifier,
                     DictationPipeline pipeline,
                     TrashPuncCleaner trashPunc)
     {
@@ -67,11 +81,15 @@ public sealed class AppHost : IDisposable
         _configPath = configPath;
         Config = config;
         _hotkey = hotkey;
+        _hotkeyNames = hotkeyNames;
         _capture = capture;
         _asr = asr;
         _output = output;
         _foreground = foreground;
         _archive = archive;
+        _diary = diary;
+        _phonemeCorrector = phonemeCorrector;
+        _notifier = notifier;
         Pipeline = pipeline;
         _trashPunc = trashPunc;
     }
@@ -82,13 +100,15 @@ public sealed class AppHost : IDisposable
         var configPath = Path.Combine(appBaseDir, "config.json");
         var config = LoadOrCreateConfig(configPath);
 
-        // 若 ModelDir 是相对路径，转成绝对
-        if (!Path.IsPathRooted(config.Asr.ModelDir))
-        {
-            config.Asr.ModelDir = Path.Combine(appBaseDir, config.Asr.ModelDir);
-        }
+        // 发布目录优先；开发运行时允许从仓库根目录找到 models/。
+        config.Asr.ModelDir = ModelDirectoryResolver.Resolve(appBaseDir, config.Asr.ModelDir);
 
-        var hotkey = new WindowsGlobalHotkey(config.Shortcut.Key, config.Shortcut.Suppress);
+        // 快捷键：优先使用 Keys 列表；否则退化为 Key
+        var keyNames = config.Shortcut.Keys is { Count: > 0 }
+            ? (IReadOnlyList<string>)config.Shortcut.Keys.ToArray()
+            : new[] { config.Shortcut.Key };
+
+        var hotkey = new WindowsGlobalHotkey(keyNames, config.Shortcut.Suppress);
         var capture = new WindowsAudioCapture(config.Audio.InputDevice);
         var asr = new ParaformerEngine(config.Asr);
         var output = new WindowsTextOutput();
@@ -96,6 +116,23 @@ public sealed class AppHost : IDisposable
         var archive = new AudioArchive(
             rootDir: Path.Combine(appBaseDir, "recordings"),
             nameLength: config.Audio.AudioNameLength);
+
+        // 日记：默认写到与录音同根（recordings/YYYY/MM/DD.md）
+        DiaryWriter? diary = config.Audio.DiaryEnabled
+            ? new DiaryWriter(Path.Combine(appBaseDir, "recordings"))
+            : null;
+
+        // 音素 RAG（首次为空；ReloadHotwords 会填充）
+        PhonemeCorrector? phonemeCorrector = config.Hotword.EnablePhonemeRag
+            ? new PhonemeCorrector(
+                threshold: config.Hotword.MatchThreshold,
+                similarThreshold: config.Hotword.SimilarThreshold)
+            : null;
+
+        // Toast：Config.Notification.Enabled 关闭时退化为 Null 实现
+        INotificationService notifier = config.Notification.Enabled
+            ? new WindowsToastNotifier()
+            : NullNotificationService.Instance;
 
         var pipeline = new DictationPipeline(hotkey, capture, asr, output, config, foreground);
 
@@ -105,25 +142,30 @@ public sealed class AppHost : IDisposable
             config.Postprocess.TrashPuncApps);
 
         var host = new AppHost(appBaseDir, configPath, config,
-            hotkey, capture, asr, output, foreground, archive, pipeline, trashPunc);
+            hotkey, keyNames, capture, asr, output, foreground, archive,
+            diary, phonemeCorrector, notifier, pipeline, trashPunc);
 
-        // 组装后处理管线：hot-rule → trash-punc
+        // 组装后处理管线：hot-rule (regex) → phoneme-rag → trash-punc
         pipeline.PostProcess = host.RunPostProcess;
 
-        // 录音归档
-        pipeline.ArchiveHandler = host.HandleArchiveAsync;
+        // 录音归档 + 日记
+        pipeline.ArchiveHandler = host.HandleArchiveAndDiaryAsync;
+
+        // 通知钩子
+        pipeline.NotificationHandler = host.HandleNotificationAsync;
 
         // 短按补发：CapsLock 场景下把切换语义还给用户
         pipeline.ShortPressDetected += (_, _) =>
         {
-            if (string.Equals(config.Shortcut.Key, "caps_lock", StringComparison.OrdinalIgnoreCase))
+            if (keyNames.Any(k => string.Equals(k, "caps_lock", StringComparison.OrdinalIgnoreCase)))
             {
                 try { output.ResendCapsLock(); } catch { /* 忽略 */ }
             }
         };
 
-        // 首次加载 hot-rule.txt 并启动监视
+        // 首次加载 hot-rule.txt / hot.txt，启动监视
         host.ReloadHotRule();
+        host.ReloadHotwords();
         host.SetupWatchers();
 
         return host;
@@ -133,6 +175,10 @@ public sealed class AppHost : IDisposable
     public async Task LoadAndStartAsync()
     {
         Emit($"hot-rule.txt: {_hotRule.RuleCount} 条规则已就绪");
+        if (_phonemeCorrector is not null)
+        {
+            Emit($"音素 RAG 热词：{_phonemeCorrector.HotwordCount} 条已就绪");
+        }
         Emit($"开始加载模型：{Config.Asr.ModelDir}");
         var sw = System.Diagnostics.Stopwatch.StartNew();
         await _asr.LoadAsync().ConfigureAwait(false);
@@ -140,7 +186,7 @@ public sealed class AppHost : IDisposable
         Emit($"模型加载完成，耗时 {sw.ElapsedMilliseconds} ms");
 
         Pipeline.Start();
-        Emit($"已监听快捷键：{Config.Shortcut.Key} (suppress={Config.Shortcut.Suppress})");
+        Emit($"已监听快捷键：[{string.Join(", ", _hotkeyNames)}] (suppress={Config.Shortcut.Suppress})");
     }
 
     public void Emit(string message) => LogEmitted?.Invoke(this, message);
@@ -152,6 +198,7 @@ public sealed class AppHost : IDisposable
 
         try { _hotRuleWatcher?.Dispose(); } catch { }
         try { _configWatcher?.Dispose(); } catch { }
+        try { _hotwordWatcher?.Dispose(); } catch { }
         try { Pipeline.Dispose(); } catch { }
         try { _hotkey.Dispose(); } catch { }
         try { _capture.Dispose(); } catch { }
@@ -170,15 +217,60 @@ public sealed class AppHost : IDisposable
             text = _hotRule.Apply(text);
         }
 
+        if (_phonemeCorrector is not null)
+        {
+            try
+            {
+                var result = _phonemeCorrector.Correct(text);
+                text = result.Text;
+                if (result.Matches.Count > 0)
+                {
+                    Emit($"[hotword] 应用 {result.Matches.Count} 处替换");
+                }
+            }
+            catch (Exception ex)
+            {
+                Emit($"[hotword] 纠错失败：{ex.Message}");
+            }
+        }
+
         var exe = _foreground.GetForegroundExeName();
         text = _trashPunc.Apply(text, exe);
         return text;
     }
 
-    private Task HandleArchiveAsync(float[] samples, string finalText)
+    private async Task HandleArchiveAndDiaryAsync(float[] samples, string finalText)
     {
-        if (!Config.Audio.SaveRecording) return Task.CompletedTask;
-        return _archive.SaveAsync(samples, finalText, DateTime.Now);
+        string? wavPath = null;
+        if (Config.Audio.SaveRecording)
+        {
+            wavPath = await _archive.SaveAsync(samples, finalText, DateTime.Now).ConfigureAwait(false);
+        }
+        if (_diary is not null && !string.IsNullOrEmpty(finalText))
+        {
+            try
+            {
+                await _diary.WriteAsync(finalText, DateTime.Now, wavPath).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Emit($"[diary] 写入失败：{ex.Message}");
+            }
+        }
+    }
+
+    private Task HandleNotificationAsync(NotificationKind kind, string title, string body)
+    {
+        if (!Config.Notification.Enabled) return Task.CompletedTask;
+        try
+        {
+            return _notifier.ShowAsync(kind, title, body);
+        }
+        catch (Exception ex)
+        {
+            Emit($"[toast] 发送失败：{ex.Message}");
+            return Task.CompletedTask;
+        }
     }
 
     // ---------- 热重载 ----------
@@ -188,11 +280,23 @@ public sealed class AppHost : IDisposable
         var hotRulePath = ResolveHotRulePath();
         _hotRuleWatcher = new DebouncedFileWatcher(hotRulePath, DebounceInterval, ReloadHotRule);
         _configWatcher = new DebouncedFileWatcher(_configPath, DebounceInterval, ReloadConfig);
+
+        if (_phonemeCorrector is not null)
+        {
+            var hotwordPath = ResolveHotwordPath();
+            _hotwordWatcher = new DebouncedFileWatcher(hotwordPath, DebounceInterval, ReloadHotwords);
+        }
     }
 
     private string ResolveHotRulePath()
     {
         var p = Config.Postprocess.HotRulePath;
+        return Path.IsPathRooted(p) ? p : Path.Combine(_appBaseDir, p);
+    }
+
+    private string ResolveHotwordPath()
+    {
+        var p = Config.Hotword.HotwordPath;
         return Path.IsPathRooted(p) ? p : Path.Combine(_appBaseDir, p);
     }
 
@@ -210,6 +314,28 @@ public sealed class AppHost : IDisposable
         }
     }
 
+    private void ReloadHotwords()
+    {
+        if (_phonemeCorrector is null) return;
+        try
+        {
+            var path = ResolveHotwordPath();
+            if (!File.Exists(path))
+            {
+                Emit($"hot.txt 未找到（{path}），音素 RAG 已加载 0 条");
+                _phonemeCorrector.UpdateHotwords(Array.Empty<HotwordEntry>());
+                return;
+            }
+            var content = File.ReadAllText(path);
+            var count = _phonemeCorrector.UpdateHotwordsFromText(content);
+            Emit($"已加载 hot.txt（{count} 条热词）");
+        }
+        catch (Exception ex)
+        {
+            Emit($"hot.txt 加载失败：{ex.Message}");
+        }
+    }
+
     private void ReloadConfig()
     {
         try
@@ -219,7 +345,7 @@ public sealed class AppHost : IDisposable
             var cfg = JsonSerializer.Deserialize<AppConfig>(json, SerializerOptions);
             if (cfg is null) return;
 
-            // 只热重载"能安全在运行时替换"的部分：后处理 / 上屏 / 归档相关
+            // 只热重载"能安全在运行时替换"的部分：后处理 / 上屏 / 归档 / 通知
             Config.Postprocess.EnableHotRule = cfg.Postprocess.EnableHotRule;
             Config.Postprocess.HotRulePath = cfg.Postprocess.HotRulePath;
             Config.Postprocess.TrashPunctuation = cfg.Postprocess.TrashPunctuation;
@@ -232,13 +358,22 @@ public sealed class AppHost : IDisposable
 
             Config.Audio.SaveRecording = cfg.Audio.SaveRecording;
             Config.Audio.AudioNameLength = cfg.Audio.AudioNameLength;
+            Config.Audio.DiaryEnabled = cfg.Audio.DiaryEnabled;
+
+            Config.Notification.Enabled = cfg.Notification.Enabled;
+            Config.Notification.ShowOnRecordingStart = cfg.Notification.ShowOnRecordingStart;
+            Config.Notification.ShowOnResult = cfg.Notification.ShowOnResult;
+            Config.Notification.ShowOnError = cfg.Notification.ShowOnError;
+
+            Config.Hotword.MatchThreshold = cfg.Hotword.MatchThreshold;
+            Config.Hotword.SimilarThreshold = cfg.Hotword.SimilarThreshold;
 
             _trashPunc = new TrashPuncCleaner(
                 Config.Postprocess.TrashPunctuation,
                 Config.Postprocess.TrashPuncThreshold,
                 Config.Postprocess.TrashPuncApps);
 
-            Emit("已热重载 config.json（快捷键/模型改动需重启生效）");
+            Emit("已热重载 config.json（快捷键/模型/日记根目录改动需重启生效）");
         }
         catch (Exception ex)
         {

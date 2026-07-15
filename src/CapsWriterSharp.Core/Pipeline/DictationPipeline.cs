@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using CapsWriterSharp.Core.Abstractions;
 using CapsWriterSharp.Core.Config;
+using CapsWriterSharp.Core.Notification;
 
 namespace CapsWriterSharp.Core.Pipeline;
 
@@ -57,6 +58,14 @@ public sealed class DictationPipeline : IDisposable
 
     /// <summary>录音归档钩子；P5 阶段可挂载 AudioArchive.SaveAsync。异常会被吞掉。</summary>
     public Func<float[], string, Task>? ArchiveHandler { get; set; }
+
+    /// <summary>
+    /// 通知钩子；P7 阶段可挂载 <see cref="INotificationService"/> 或自定义回调。
+    /// 触发时机由 <see cref="NotificationConfig"/> 控制：
+    ///   录音开始（<c>Info</c>，可选）／识别完成（<c>Success</c>）／错误（<c>Error</c>）。
+    /// 异常会被吞掉，不影响主流程。
+    /// </summary>
+    public Func<NotificationKind, string, string, Task>? NotificationHandler { get; set; }
 
     public DictationPipeline(
         IGlobalHotkey hotkey,
@@ -123,6 +132,7 @@ public sealed class DictationPipeline : IDisposable
 
     private void OnKeyPressed(object? sender, HotkeyEventArgs e)
     {
+        bool startedRecording = false;
         lock (_stateLock)
         {
             if (_disposed || _paused) return;
@@ -134,12 +144,19 @@ public sealed class DictationPipeline : IDisposable
             {
                 _capture.Start();
                 TransitionNoLock(PipelineState.Recording);
+                startedRecording = true;
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[Pipeline] capture Start failed: {ex.Message}");
                 TransitionNoLock(PipelineState.Error);
+                _ = FireNotificationAsync(NotificationKind.Error, "CapsWriter", $"录音启动失败：{ex.Message}");
             }
+        }
+
+        if (startedRecording && _config.Notification.Enabled && _config.Notification.ShowOnRecordingStart)
+        {
+            _ = FireNotificationAsync(NotificationKind.Info, "CapsWriter", "开始录音…");
         }
     }
 
@@ -235,11 +252,39 @@ public sealed class DictationPipeline : IDisposable
             }
 
             lock (_stateLock) { TransitionNoLock(PipelineState.Idle); }
+
+            if (_config.Notification.Enabled && _config.Notification.ShowOnResult
+                && !string.IsNullOrEmpty(finalText))
+            {
+                await FireNotificationAsync(NotificationKind.Success, "识别完成", finalText)
+                    .ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[Pipeline] recognize/output failed: {ex}");
             lock (_stateLock) { TransitionNoLock(PipelineState.Error); }
+
+            if (_config.Notification.Enabled && _config.Notification.ShowOnError)
+            {
+                await FireNotificationAsync(NotificationKind.Error, "识别失败", ex.Message)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    private Task FireNotificationAsync(NotificationKind kind, string title, string body)
+    {
+        var handler = NotificationHandler;
+        if (handler is null) return Task.CompletedTask;
+        try
+        {
+            return handler(kind, title, body);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Pipeline] notification handler threw: {ex.Message}");
+            return Task.CompletedTask;
         }
     }
 
