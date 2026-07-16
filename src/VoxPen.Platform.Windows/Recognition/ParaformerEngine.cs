@@ -48,7 +48,12 @@ public sealed class ParaformerEngine : IAsrEngine
                 if (_recognizer is not null) return;
                 ThrowIfDisposed();
 
-                var (modelPath, tokensPath) = ResolveModelPaths(_config.ModelDir);
+                var validation = ModelDirectoryValidator.Validate(_config.ModelDir);
+                if (!validation.IsValid)
+                    throw new DirectoryNotFoundException(validation.Message);
+
+                var modelPath = validation.ModelPath!;
+                var tokensPath = validation.TokensPath!;
 
                 var recognizerConfig = new OfflineRecognizerConfig();
                 recognizerConfig.FeatConfig.SampleRate = TargetSampleRate;
@@ -152,40 +157,4 @@ public sealed class ParaformerEngine : IAsrEngine
         if (_disposed) throw new ObjectDisposedException(nameof(ParaformerEngine));
     }
 
-    /// <summary>
-    /// 根据配置目录解析模型和词表文件路径，接受几种常见命名。
-    /// </summary>
-    private static (string ModelPath, string TokensPath) ResolveModelPaths(string modelDir)
-    {
-        if (string.IsNullOrWhiteSpace(modelDir))
-        {
-            throw new DirectoryNotFoundException("AsrConfig.ModelDir is empty.");
-        }
-
-        var fullDir = Path.GetFullPath(modelDir);
-        if (!Directory.Exists(fullDir))
-        {
-            throw new DirectoryNotFoundException(
-                $"Model directory not found: {fullDir}. " +
-                $"Please download the Paraformer ONNX model and extract it here.");
-        }
-
-        var candidates = new[] { "model.int8.onnx", "model.onnx" };
-        string? modelPath = candidates
-            .Select(n => Path.Combine(fullDir, n))
-            .FirstOrDefault(File.Exists);
-        if (modelPath is null)
-        {
-            throw new FileNotFoundException(
-                $"No Paraformer model file (model.int8.onnx or model.onnx) in {fullDir}.");
-        }
-
-        var tokensPath = Path.Combine(fullDir, "tokens.txt");
-        if (!File.Exists(tokensPath))
-        {
-            throw new FileNotFoundException($"tokens.txt not found in {fullDir}.");
-        }
-
-        return (modelPath, tokensPath);
-    }
 }

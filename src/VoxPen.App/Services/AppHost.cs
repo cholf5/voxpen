@@ -61,6 +61,47 @@ public sealed class AppHost : IDisposable
     /// <summary>轻量日志通道：UI 订阅后填到"日志"面板。</summary>
     public event EventHandler<string>? LogEmitted;
 
+    /// <summary>保存快捷键设置；全局监听器将在应用重启后使用新配置。</summary>
+    public void SaveShortcut(string key) => ShortcutSettings.Save(_configPath, Config, key);
+
+    public ModelDirectoryValidation ValidateModelDirectory(string modelDir)
+    {
+        var resolved = ModelDirectoryResolver.Resolve(_appBaseDir, modelDir);
+        return ModelDirectoryValidator.Validate(resolved);
+    }
+
+    public bool IsModelLoaded => _asr.IsLoaded;
+
+    public bool IsModelLoadedFor(string modelDir)
+    {
+        var resolved = ModelDirectoryResolver.Resolve(_appBaseDir, modelDir);
+        return _asr.IsLoaded
+            && string.Equals(Path.GetFullPath(resolved), Path.GetFullPath(Config.Asr.ModelDir),
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>保存模型目录；当前已加载的识别器将在应用重启后切换。</summary>
+    public void SaveModelDirectory(string modelDir)
+    {
+        if (string.IsNullOrWhiteSpace(modelDir))
+            throw new ArgumentException("模型目录不能为空", nameof(modelDir));
+
+        var oldModelDir = Config.Asr.ModelDir;
+        var tempPath = $"{_configPath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            Config.Asr.ModelDir = modelDir.Trim();
+            var json = JsonSerializer.Serialize(Config, SerializerOptions);
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, _configPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+            Config.Asr.ModelDir = oldModelDir;
+        }
+    }
+
     private AppHost(string appBaseDir,
                     string configPath,
                     AppConfig config,

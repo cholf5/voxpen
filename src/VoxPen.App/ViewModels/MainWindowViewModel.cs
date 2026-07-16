@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -24,15 +25,21 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly AppHost? _host;
     private readonly AppConfig _config;
     private readonly StringBuilder _log = new();
+    private CancellationTokenSource? _modelCheckCancellation;
 
     [ObservableProperty] private string _stateLabel = "就绪";
     [ObservableProperty] private IBrush _stateBrush = Brushes.Gray;
     [ObservableProperty] private string _shortcutHint = "长按 CapsLock 说话，松开上屏";
     [ObservableProperty] private string _modelDir = "models/paraformer";
+    [ObservableProperty] private string _modelStatusIcon = "❌";
+    [ObservableProperty] private string _modelStatusText = "正在检测模型…";
+    [ObservableProperty] private string _modelSaveStatus = "";
     [ObservableProperty] private string _outputModeLabel = "模拟打字";
     [ObservableProperty] private string _pasteAppsLabel = "";
     [ObservableProperty] private string _logText = "";
     [ObservableProperty] private string _startupError = "";
+    [ObservableProperty] private ShortcutOption _selectedShortcut = ShortcutSettings.Options[0];
+    [ObservableProperty] private string _shortcutSaveStatus = "";
     [ObservableProperty] private bool _isPaused;
 
     public bool HasStartupError => !string.IsNullOrEmpty(StartupError);
@@ -40,6 +47,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public bool IsExiting { get; private set; }
 
     public ObservableCollection<HistoryEntry> History { get; } = new();
+    public IReadOnlyList<ShortcutOption> ShortcutOptions => ShortcutSettings.Options;
 
     /// <summary>设计时无参构造，供 Avalonia XAML 预览器使用。</summary>
     public MainWindowViewModel()
@@ -64,10 +72,47 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private void RefreshConfigLabels()
     {
         ModelDir = _config.Asr.ModelDir;
+        var configuredKey = _config.Shortcut.Keys.FirstOrDefault() ?? _config.Shortcut.Key;
+        SelectedShortcut = ShortcutSettings.Options.FirstOrDefault(option =>
+            string.Equals(option.Key, configuredKey, StringComparison.OrdinalIgnoreCase))
+            ?? ShortcutSettings.Options[0];
+        ShortcutHint = $"长按 {SelectedShortcut.DisplayName} 说话，松开上屏";
         OutputModeLabel = _config.Output.Mode == OutputMode.Paste ? "剪贴板粘贴" : "模拟打字";
         PasteAppsLabel = _config.Output.PasteApps.Count == 0
             ? "（无）"
             : string.Join(", ", _config.Output.PasteApps);
+    }
+
+    partial void OnModelDirChanged(string value) => _ = DetectModelAsync(value);
+
+    private async Task DetectModelAsync(string modelDir)
+    {
+        _modelCheckCancellation?.Cancel();
+        _modelCheckCancellation?.Dispose();
+        _modelCheckCancellation = new CancellationTokenSource();
+        var cancellationToken = _modelCheckCancellation.Token;
+
+        ModelStatusIcon = "…";
+        ModelStatusText = "正在检测模型…";
+        try
+        {
+            await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+            var result = _host is null
+                ? ModelDirectoryValidator.Validate(modelDir)
+                : _host.ValidateModelDirectory(modelDir);
+            if (cancellationToken.IsCancellationRequested) return;
+
+            ModelStatusIcon = result.IsValid ? "✅" : "❌";
+            ModelStatusText = result.IsValid
+                ? (_host?.IsModelLoadedFor(modelDir) == true ? "模型已加载" : "模型文件完整，重启后生效")
+                : result.Message;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            ModelStatusIcon = "❌";
+            ModelStatusText = $"检测失败：{ex.Message}";
+        }
     }
 
     private void ApplyState(PipelineState state)
@@ -119,6 +164,47 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     [RelayCommand]
     private void ClearHistory() => History.Clear();
+
+    [RelayCommand]
+    private void SaveShortcut()
+    {
+        if (_host is null)
+        {
+            ShortcutSaveStatus = "设计预览模式不可保存";
+            return;
+        }
+
+        try
+        {
+            _host.SaveShortcut(SelectedShortcut.Key);
+            ShortcutSaveStatus = "已保存，重启应用后生效";
+        }
+        catch (Exception ex)
+        {
+            ShortcutSaveStatus = $"保存失败：{ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void SaveModelDirectory()
+    {
+        if (_host is null)
+        {
+            ModelSaveStatus = "设计预览模式不可保存";
+            return;
+        }
+
+        try
+        {
+            _host.SaveModelDirectory(ModelDir);
+            ModelSaveStatus = "已保存，重启应用后生效";
+            _ = DetectModelAsync(ModelDir);
+        }
+        catch (Exception ex)
+        {
+            ModelSaveStatus = $"保存失败：{ex.Message}";
+        }
+    }
 
     [RelayCommand]
     private void TogglePause()

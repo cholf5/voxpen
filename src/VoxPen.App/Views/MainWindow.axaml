@@ -70,10 +70,38 @@
                 <ScrollViewer>
                     <StackPanel Spacing="10">
                         <TextBlock Text="快捷键" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding ShortcutHint}" Opacity="0.75" />
+                        <ComboBox ItemsSource="{Binding ShortcutOptions}"
+                                  SelectedItem="{Binding SelectedShortcut}"
+                                  HorizontalAlignment="Left"
+                                  MinWidth="220">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayName}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Content="保存快捷键"
+                                Command="{Binding SaveShortcutCommand}"
+                                HorizontalAlignment="Left" />
+                        <TextBlock Text="{Binding ShortcutSaveStatus}"
+                                   Opacity="0.75"
+                                   TextWrapping="Wrap" />
 
                         <TextBlock Text="模型目录" FontWeight="SemiBold" Margin="0,8,0,0" />
-                        <TextBlock Text="{Binding ModelDir}" Opacity="0.75" TextWrapping="Wrap" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBox Grid.Column="0"
+                                     Text="{Binding ModelDir, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="模型目录路径" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding ModelStatusIcon}"
+                                       FontSize="18"
+                                       VerticalAlignment="Center" />
+                        </Grid>
+                        <TextBlock Text="{Binding ModelStatusText}" Opacity="0.75" TextWrapping="Wrap" />
+                        <Button Content="保存模型目录"
+                                Command="{Binding SaveModelDirectoryCommand}"
+                                HorizontalAlignment="Left" />
+                        <TextBlock Text="{Binding ModelSaveStatus}" Opacity="0.75" TextWrapping="Wrap" />
 
                         <TextBlock Text="上屏模式" FontWeight="SemiBold" Margin="0,8,0,0" />
                         <TextBlock Text="{Binding OutputModeLabel}" Opacity="0.75" />
@@ -82,7 +110,7 @@
                         <TextBlock Text="{Binding PasteAppsLabel}" Opacity="0.75" TextWrapping="Wrap" />
 
                         <Border Height="1" Background="{DynamicResource SystemBaseLowColor}" Margin="0,12,0,12" />
-                        <TextBlock Text="P5 阶段将加入可视化编辑与热加载；当前请手工编辑 config.json。"
+                        <TextBlock Text="快捷键保存后需要重启应用；其他高级配置仍可手工编辑 config.json。"
                                    Opacity="0.55" TextWrapping="Wrap" />
                     </StackPanel>
                 </ScrollViewer>
