@@ -91,6 +91,9 @@ Headless env vars useful in scripts / CI:
 
 ## Commit conventions
 
+- **Commit directly on `main`.** This is a solo project — no feature
+  branches, no PRs by default. Agents must not `git checkout -b` before
+  committing; stage, commit, and (if asked) push straight to `main`.
 - **Every commit MUST use Conventional Commits.** The release workflow
   (`.github/workflows/release.yml`) groups Release notes by prefix; a
   commit without a recognised prefix falls into a catch-all "其他"
