@@ -58,8 +58,9 @@ jobs:
 
       - name: Restore
         # 避免依赖 .slnx（需要新版 SDK），按项目 restore
+        # App 传 -r win-x64，让 assets 文件带上 RID pivot，publish --no-restore 才能用
         run: |
-          dotnet restore src/VoxPen.App/VoxPen.App.csproj
+          dotnet restore src/VoxPen.App/VoxPen.App.csproj -r win-x64
           dotnet restore tests/VoxPen.Core.Tests/VoxPen.Core.Tests.csproj
 
       - name: Test
