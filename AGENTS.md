@@ -89,6 +89,21 @@ Headless env vars useful in scripts / CI:
 - Tests are xUnit; put new tests under the matching `tests/…/<Area>/`
   folder so `InternalsVisibleTo` gives them access.
 
+## Commit conventions
+
+- **Every commit MUST use Conventional Commits.** The release workflow
+  (`.github/workflows/release.yml`) groups Release notes by prefix; a
+  commit without a recognised prefix falls into a catch-all "其他"
+  bucket and is treated as a mistake.
+- Format: `<type>(<optional scope>)!?: <subject>`. Recognised types:
+  `feat` → 🚀 新功能, `fix` → 🐛 修复, `refactor` / `perf` → 🔧 优化,
+  `docs` / `chore` / `build` / `ci` / `style` / `test` → 📝 杂项.
+  Breaking change marker `!` is allowed (`feat!: ...`).
+- Subject follows the surrounding-language rule — Chinese or English,
+  whichever matches recent history in the area.
+- Rebase / squash-merge is fine; only the final commit landing on
+  `main` needs the prefix.
+
 ## Gotchas
 
 - **Never junction (`mklink /J`) `publish/models` → `models/`.** PowerShell
