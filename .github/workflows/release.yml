@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'SemVer 版本号，例如 0.1.0 或 0.1.0-rc.1'
+        required: true
+        type: string
+      prerelease:
+        description: '标记为 pre-release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build & publish Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: 校验版本号格式
+        shell: pwsh
+        run: |
+          $ver = '${{ inputs.version }}'
+          if ($ver -notmatch '^\d+\.\d+\.\d+(-[a-z0-9.]+)?$') {
+            Write-Error "版本号 '$ver' 不符合 SemVer 格式（如 0.1.0 或 0.1.0-rc.1）"
+            exit 1
+          }
+          # AssemblyVersion 只允许 4 段数字，去掉 -xxx 后缀
+          $numeric = $ver -replace '-.*',''
+          "VERSION=$ver"                  | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VERSION_NUMERIC=$numeric"      | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "STAGE_NAME=VoxPen-$ver-win-x64" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        # 避免依赖 .slnx（需要新版 SDK），按项目 restore
+        run: |
+          dotnet restore src/VoxPen.App/VoxPen.App.csproj
+          dotnet restore tests/VoxPen.Core.Tests/VoxPen.Core.Tests.csproj
+
+      - name: Test
+        run: dotnet test tests/VoxPen.Core.Tests/VoxPen.Core.Tests.csproj --no-restore -c Release --logger "console;verbosity=normal"
+
+      - name: Publish single-file exe
+        shell: pwsh
+        run: |
+          dotnet publish src/VoxPen.App/VoxPen.App.csproj `
+            -c Release -r win-x64 --self-contained true --no-restore `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:Version=$env:VERSION `
+            -p:AssemblyVersion=$env:VERSION_NUMERIC.0 `
+            -p:FileVersion=$env:VERSION_NUMERIC.0 `
+            -p:InformationalVersion=$env:VERSION `
+            -o publish/win-x64
+
+      - name: Stage release contents
+        shell: pwsh
+        run: |
+          $stage = "staging/$env:STAGE_NAME"
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+
+          Copy-Item publish/win-x64/VoxPen.App.exe $stage/
+          if (Test-Path publish/win-x64/hot-rule.txt) {
+            Copy-Item publish/win-x64/hot-rule.txt $stage/
+          } elseif (Test-Path hot-rule.txt) {
+            Copy-Item hot-rule.txt $stage/
+          }
+          if (Test-Path hot.txt)            { Copy-Item hot.txt            $stage/ }
+          if (Test-Path config.sample.json) { Copy-Item config.sample.json $stage/ }
+          Copy-Item README.md      $stage/
+          Copy-Item FIRST-RUN.txt  $stage/
+
+          Get-ChildItem $stage | Format-Table -AutoSize
+
+      - name: Compress zip
+        shell: pwsh
+        run: |
+          $stage = "staging/$env:STAGE_NAME"
+          $zip   = "$env:STAGE_NAME.zip"
+          Compress-Archive -Path $stage -DestinationPath $zip -Force
+          $size = (Get-Item $zip).Length / 1MB
+          Write-Host ("Zip size: {0:N1} MB" -f $size)
+
+      - name: SHA256
+        shell: pwsh
+        run: |
+          $zip = "$env:STAGE_NAME.zip"
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+          "$hash  $zip" | Out-File -FilePath "$zip.sha256" -Encoding ascii
+          Write-Host "SHA256: $hash"
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $zip = "$env:STAGE_NAME.zip"
+          $ghArgs = @(
+            'release','create',"v$env:VERSION",
+            $zip,"$zip.sha256",
+            '--title',"VoxPen v$env:VERSION",
+            '--generate-notes',
+            '--target',$env:GITHUB_SHA
+          )
+          if ('${{ inputs.prerelease }}' -eq 'true') { $ghArgs += '--prerelease' }
+          & gh @ghArgs

@@ -1,0 +1,21 @@
+VoxPen 声写 · 首次运行须知
+================================
+
+1. 需要先下载 Paraformer 模型（约 229 MB）
+   推荐镜像：https://github.com/HaujetZhao/CapsWriter-Offline/releases/tag/models
+   把解压后的文件放到 exe 同级目录的 models\paraformer\ 里
+   （目录里应该能看到 model.onnx / tokens.txt / am.mvn / config.yaml 等）
+   详细步骤见 README.md 的"快速开始"一节。
+
+2. Windows 首次运行会弹"Windows 已保护你的电脑"
+   这是 SmartScreen 对未签名 exe 的默认提示。
+   点"更多信息" → "仍要运行"即可，之后不再提示。
+   如果杀软/管家把 exe 判为可疑，请把它加入白名单
+   （单文件 exe 内嵌了大量原生 DLL，容易被启发式误报）。
+
+3. 使用方法
+   双击 VoxPen.App.exe 后，任务栏右下角会出现蓝底 "C" 图标。
+   把光标点到任意可输入位置，按住 CapsLock 说话，松开即上屏。
+   短按 CapsLock（< 0.3 秒）仍保留原来的大小写切换语义。
+
+有问题欢迎在 GitHub Issues 反馈。

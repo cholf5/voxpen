@@ -1,0 +1,29 @@
+# Release notes 分组配置
+# 说明：GitHub 的自动生成 release notes 按 **PR 标签** 分组，本仓库目前是单人直推 main，
+# 所以 --generate-notes 出来的是扁平的 commit 列表。等未来引入 PR 流程后，
+# 给 PR 打上下列 labels 就会按此配置分类。
+changelog:
+  categories:
+    - title: 🚀 新功能
+      labels:
+        - feat
+        - feature
+        - enhancement
+    - title: 🐛 修复
+      labels:
+        - fix
+        - bug
+    - title: 🔧 优化
+      labels:
+        - refactor
+        - perf
+        - performance
+    - title: 📝 杂项
+      labels:
+        - docs
+        - chore
+        - build
+        - ci
+    - title: 其他
+      labels:
+        - "*"
