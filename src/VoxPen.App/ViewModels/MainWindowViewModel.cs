@@ -33,6 +33,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private string _modelDir = "models/paraformer";
     [ObservableProperty] private string _modelStatusIcon = "❌";
     [ObservableProperty] private string _modelStatusText = "正在检测模型…";
+    [ObservableProperty] private string _modelDownloadHint = "";
     [ObservableProperty] private string _modelSaveStatus = "";
     [ObservableProperty] private string _outputModeLabel = "模拟打字";
     [ObservableProperty] private string _pasteAppsLabel = "";
@@ -43,6 +44,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private bool _isPaused;
 
     public bool HasStartupError => !string.IsNullOrEmpty(StartupError);
+
+    public bool HasModelDownloadHint => !string.IsNullOrEmpty(ModelDownloadHint);
 
     public bool IsExiting { get; private set; }
 
@@ -106,12 +109,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
             ModelStatusText = result.IsValid
                 ? (_host?.IsModelLoadedFor(modelDir) == true ? "模型已加载" : "模型文件完整，重启后生效")
                 : result.Message;
+            ModelDownloadHint = result.IsValid
+                ? ""
+                : $"请下载 {ModelDownloadInfo.PackageName}：{ModelDownloadInfo.DownloadUrl}";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             ModelStatusIcon = "❌";
             ModelStatusText = $"检测失败：{ex.Message}";
+            ModelDownloadHint = $"请下载 {ModelDownloadInfo.PackageName}：{ModelDownloadInfo.DownloadUrl}";
         }
     }
 
@@ -150,6 +157,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public void SetStartupError(string message) => StartupError = message;
 
     partial void OnStartupErrorChanged(string value) => OnPropertyChanged(nameof(HasStartupError));
+
+    partial void OnModelDownloadHintChanged(string value) => OnPropertyChanged(nameof(HasModelDownloadHint));
 
     [RelayCommand]
     private async Task CopyLatestAsync()

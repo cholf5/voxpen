@@ -84,8 +84,24 @@ public partial class App : Application
                 });
             }
 
-            // 后台加载模型 + 启动 hook；失败弹提示，不阻塞 UI
-            _ = LoadHostAsync();
+            // 启动前先做一次模型预校验：目录 / model.onnx / tokens.txt 缺任何一样，
+            // 都立刻显示主窗 + 红色横幅 + Toast + 日志，指引下载。
+            // 通过后再走后台加载模型 + 启动 hook 流程。
+            var validation = _host.ValidateModelDirectory(_host.Config.Asr.ModelDir);
+            if (!validation.IsValid)
+            {
+                var msg = ModelDownloadInfo.FormatMissingModelHint(_host.Config.Asr.ModelDir, validation.Message);
+                _host.Emit(msg);
+                _viewModel.SetStartupError(msg);
+                _mainWindow.Show();
+                _mainWindow.Activate();
+                _ = _host.NotifyModelMissingAsync(_host.Config.Asr.ModelDir);
+            }
+            else
+            {
+                // 后台加载模型 + 启动 hook；失败弹提示，不阻塞 UI
+                _ = LoadHostAsync();
+            }
         }
 
         base.OnFrameworkInitializationCompleted();

@@ -72,6 +72,24 @@ public sealed class AppHost : IDisposable
 
     public bool IsModelLoaded => _asr.IsLoaded;
 
+    /// <summary>
+    /// 向用户弹一条"模型缺失"的 Toast 提醒。失败会静默降级到日志。
+    /// 只在 <see cref="AppConfig.Notification"/> 的 Enabled == true 时才真的发通知。
+    /// </summary>
+    public async Task NotifyModelMissingAsync(string modelDir)
+    {
+        if (!Config.Notification.Enabled) return;
+        try
+        {
+            var (title, body) = ModelDownloadInfo.FormatToast(modelDir);
+            await _notifier.ShowAsync(NotificationKind.Error, title, body).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Emit($"[toast] 模型缺失提醒发送失败：{ex.Message}");
+        }
+    }
+
     public bool IsModelLoadedFor(string modelDir)
     {
         var resolved = ModelDirectoryResolver.Resolve(_appBaseDir, modelDir);

@@ -16,5 +16,7 @@ public sealed class StartupErrorFormatterTests
         Assert.Contains("模型加载失败", message);
         Assert.Contains("C:\\VoxPen\\models\\paraformer", message);
         Assert.Contains("请检查模型目录", message);
+        Assert.Contains(ModelDownloadInfo.DownloadUrl, message);
+        Assert.Contains(ModelDownloadInfo.PackageName, message);
     }
 }
