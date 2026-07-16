@@ -22,6 +22,7 @@ public sealed class DictationPipelineTests
             new FakeTextOutput(),
             new AppConfig
             {
+                Shortcut = new ShortcutConfig { ShortPressThresholdSeconds = 0.001 },
                 Notification = new NotificationConfig
                 {
                     Enabled = true,
@@ -41,12 +42,36 @@ public sealed class DictationPipelineTests
         var pressedAt = DateTime.UtcNow;
         hotkey.RaisePressed(pressedAt);
         capture.RaiseChunk(new float[8000]);
+        Thread.Sleep(10);
         hotkey.RaiseReleased(pressedAt.AddSeconds(1));
 
         (await recognized.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().Be("测试结果");
         await Task.Delay(100);
 
         notifications.Should().Be(0);
+    }
+
+    [Fact]
+    public void ImmediateRelease_IsShortPressEvenWhenHookTimestampIsUnreliable()
+    {
+        using var hotkey = new FakeHotkey();
+        using var capture = new FakeAudioCapture();
+        using var pipeline = new DictationPipeline(
+            hotkey,
+            capture,
+            new FakeAsr("不应识别"),
+            new FakeTextOutput(),
+            new AppConfig());
+
+        var shortPresses = 0;
+        pipeline.ShortPressDetected += (_, _) => shortPresses++;
+
+        var pressedAt = DateTime.UtcNow;
+        hotkey.RaisePressed(pressedAt);
+        hotkey.RaiseReleased(pressedAt.AddSeconds(10));
+
+        shortPresses.Should().Be(1);
+        pipeline.State.Should().Be(PipelineState.Idle);
     }
 
     private sealed class FakeHotkey : IGlobalHotkey

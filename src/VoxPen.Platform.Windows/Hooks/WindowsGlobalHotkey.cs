@@ -12,6 +12,12 @@ namespace VoxPen.Platform.Windows.Hooks;
 /// - <see cref="SimpleGlobalHook"/> 才支持在事件处理器中同步设置 <c>SuppressEvent</c>
 /// - 处理器必须同步返回；重活丢到 Channel/Task 里由订阅方处理
 /// - 单进程只允许一个 IGlobalHook 实例（libuiohook 是进程级单例）
+///
+/// 自捕获防护：
+/// - Windows 上 libuiohook 会通过 <c>LLKHF_INJECTED</c> 标记合成事件，SharpHook 透出为
+///   <see cref="HookEventArgs.IsEventSimulated"/>。任何合成事件（含我们自己 <c>SendInput</c>
+///   补发的 CapsLock、或其它进程的 SendInput）都直接放行给系统，不进入快捷键流水线，
+///   也不会被抑制。这一层足以取代早期基于计数器的自捕获登记方案。
 /// </summary>
 public sealed class WindowsGlobalHotkey : IGlobalHotkey
 {
@@ -132,6 +138,9 @@ public sealed class WindowsGlobalHotkey : IGlobalHotkey
     private void OnKeyPressed(object? sender, KeyboardHookEventArgs e)
     {
         if (!_keyMap.TryGetValue(e.Data.KeyCode, out var name)) return;
+        // 合成事件（含我们补发的 CapsLock）不进入流水线，也不被抑制，
+        // 直接放行给系统。这是唯一可靠的防自捕获手段。
+        if (e.IsEventSimulated) return;
         if (_suppress) e.SuppressEvent = true;
         SafeInvoke(KeyPressed, name);
     }
@@ -139,6 +148,7 @@ public sealed class WindowsGlobalHotkey : IGlobalHotkey
     private void OnKeyReleased(object? sender, KeyboardHookEventArgs e)
     {
         if (!_keyMap.TryGetValue(e.Data.KeyCode, out var name)) return;
+        if (e.IsEventSimulated) return;
         if (_suppress) e.SuppressEvent = true;
         SafeInvoke(KeyReleased, name);
     }
@@ -146,6 +156,7 @@ public sealed class WindowsGlobalHotkey : IGlobalHotkey
     private void OnMousePressed(object? sender, MouseHookEventArgs e)
     {
         if (!_mouseMap.TryGetValue(e.Data.Button, out var name)) return;
+        if (e.IsEventSimulated) return;
         if (_suppress) e.SuppressEvent = true;
         SafeInvoke(KeyPressed, name);
     }
@@ -153,6 +164,7 @@ public sealed class WindowsGlobalHotkey : IGlobalHotkey
     private void OnMouseReleased(object? sender, MouseHookEventArgs e)
     {
         if (!_mouseMap.TryGetValue(e.Data.Button, out var name)) return;
+        if (e.IsEventSimulated) return;
         if (_suppress) e.SuppressEvent = true;
         SafeInvoke(KeyReleased, name);
     }

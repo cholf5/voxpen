@@ -173,12 +173,60 @@ public sealed class WindowsTextOutput : ITextOutput
     /// 合成一次 CapsLock 按下再松开。用于短按补发场景：
     /// 若快捷键抑制期间用户短按 CapsLock (&lt; 阈值)，我们撤销录音并补发该键，
     /// 让用户仍然能像平常一样切换大小写状态。
+    ///
+    /// 实现要点：
+    /// - 补发**必须**离开全局 Hook 线程。否则同线程 <c>SendInput</c> 与刚抑制的物理事件
+    ///   会踩到 LL 键盘 Hook 的时序死角，出现「合成调用成功但系统状态未翻转」的怪现象。
+    /// - 补发前留出 <see cref="ResendDelayMs"/> 毫秒，让物理 KeyUp 的抑制完全落地。
+    /// - 一次 <c>SendInput(2, …)</c> 提交 DOWN+UP 作为原子批次，减少中间被别的输入插入的概率。
+    /// - 合成事件回流到 Hook 时由 <c>IsEventSimulated</c> 过滤掉，不会误触自身。
     /// </summary>
     public void ResendCapsLock()
     {
-        SendKey(VK_CAPITAL, keyUp: false);
-        SendKey(VK_CAPITAL, keyUp: true);
+        Task.Run(static () =>
+        {
+            try
+            {
+                Thread.Sleep(ResendDelayMs);
+
+                var inputs = new[]
+                {
+                    MakeKeyInput(VK_CAPITAL, keyUp: false),
+                    MakeKeyInput(VK_CAPITAL, keyUp: true),
+                };
+                var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+                if (sent != inputs.Length)
+                {
+                    Debug.WriteLine(
+                        $"[ResendCapsLock] SendInput sent {sent}/{inputs.Length}, " +
+                        $"LastError={Marshal.GetLastWin32Error()}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ResendCapsLock] failed: {ex}");
+            }
+        });
     }
+
+    /// <summary>补发前的等待时间。参考原 CapsWriter-Offline 的 50 ms 延时。</summary>
+    private const int ResendDelayMs = 50;
+
+    private static INPUT MakeKeyInput(ushort vk, bool keyUp) => new()
+    {
+        type = INPUT_KEYBOARD,
+        u = new INPUTUNION
+        {
+            ki = new KEYBDINPUT
+            {
+                wVk = vk,
+                wScan = 0,
+                dwFlags = keyUp ? KEYEVENTF_KEYUP : 0,
+                time = 0,
+                dwExtraInfo = IntPtr.Zero,
+            }
+        }
+    };
 }
 
 /// <summary>Windows 剪贴板互操作，只处理 Unicode 文本。</summary>

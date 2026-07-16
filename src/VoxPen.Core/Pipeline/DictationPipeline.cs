@@ -32,7 +32,7 @@ public sealed class DictationPipeline : IDisposable
     private readonly List<float> _buffer = new(capacity: 16000 * 30);
 
     private PipelineState _state = PipelineState.Idle;
-    private DateTime _pressedAtUtc;
+    private long _pressedAtTimestamp;
     private bool _paused;
     private bool _disposed;
 
@@ -138,7 +138,9 @@ public sealed class DictationPipeline : IDisposable
             if (_disposed || _paused) return;
             if (_state != PipelineState.Idle && _state != PipelineState.Error) return;
 
-            _pressedAtUtc = e.TimestampUtc;
+            // 使用本机单调时钟。Hook 事件携带的时间戳在 Windows/合成输入场景下
+            // 可能来自不同时间基准，不能用于可靠的长短按判定。
+            _pressedAtTimestamp = Stopwatch.GetTimestamp();
             _buffer.Clear();
             try
             {
@@ -170,7 +172,7 @@ public sealed class DictationPipeline : IDisposable
             if (_state != PipelineState.Recording) return;
 
             _capture.Stop();
-            var held = e.TimestampUtc - _pressedAtUtc;
+            var held = Stopwatch.GetElapsedTime(_pressedAtTimestamp);
             isShortPress = held.TotalSeconds < _config.Shortcut.ShortPressThresholdSeconds;
 
             if (isShortPress)
