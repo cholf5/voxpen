@@ -13,6 +13,12 @@ public sealed class ShortcutSettingsTests
         ShortcutSettings.DefaultKey.Should().Be("caps_lock");
         ShortcutSettings.Options.Should().Contain(option => option.Key == "caps_lock" && option.DisplayName == "Caps Lock");
         ShortcutSettings.Options.Should().Contain(option => option.Key == "x2" && option.DisplayName.Contains("前进"));
+
+        ShortcutSettings.Options
+            .Where(option => option.Key.StartsWith("f", StringComparison.Ordinal))
+            .Select(option => option.Key)
+            .Should()
+            .ContainInOrder(Enumerable.Range(1, 12).Select(index => $"f{index}"));
     }
 
     [Theory]
