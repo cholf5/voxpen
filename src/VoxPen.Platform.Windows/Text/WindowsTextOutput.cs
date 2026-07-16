@@ -71,6 +71,20 @@ public sealed class WindowsTextOutput : ITextOutput
     private struct INPUTUNION
     {
         [FieldOffset(0)] public KEYBDINPUT ki;
+        // INPUT 的原生联合体大小由 MOUSEINPUT 决定；即使这里只发送键盘事件，
+        // 也必须保留该成员，否则 x64 下 cbSize 会变成 32 而不是 40。
+        [FieldOffset(0)] public MOUSEINPUT mi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
     }
 
     [StructLayout(LayoutKind.Sequential)]
