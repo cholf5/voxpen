@@ -91,9 +91,14 @@ Headless env vars useful in scripts / CI:
 
 ## Commit conventions
 
+- **Never commit without explicit user permission.** After editing files,
+  stop at the working-tree stage and wait for the user to say "提交" /
+  "commit" / "push". Do not run `git add` + `git commit` on your own
+  initiative, even for "obviously safe" changes.
 - **Commit directly on `main`.** This is a solo project — no feature
-  branches, no PRs by default. Agents must not `git checkout -b` before
-  committing; stage, commit, and (if asked) push straight to `main`.
+  branches, no PRs by default. Once the user authorises a commit, stage,
+  commit, and (if asked) push straight to `main`; do not
+  `git checkout -b`.
 - **Every commit MUST use Conventional Commits.** The release workflow
   (`.github/workflows/release.yml`) groups Release notes by prefix; a
   commit without a recognised prefix falls into a catch-all "其他"

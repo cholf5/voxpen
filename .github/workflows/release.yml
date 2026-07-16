@@ -57,20 +57,24 @@ jobs:
           restore-keys: nuget-${{ runner.os }}-
 
       - name: Restore
-        # 避免依赖 .slnx（需要新版 SDK），按项目 restore
-        # App 传 -r win-x64，让 assets 文件带上 RID pivot，publish --no-restore 才能用
+        # 避免依赖 .slnx（需要新版 SDK），按项目 restore。
+        # 注意：App 这里不要传 -r win-x64——.NET 10 SDK 下这个组合有时
+        # 不会把 win-x64 pivot 写进 project.assets.json，导致后续 publish
+        # --no-restore 时 NETSDK1047。让 publish 自己 restore 更稳。
         run: |
-          dotnet restore src/VoxPen.App/VoxPen.App.csproj -r win-x64
+          dotnet restore src/VoxPen.App/VoxPen.App.csproj
           dotnet restore tests/VoxPen.Core.Tests/VoxPen.Core.Tests.csproj
 
       - name: Test
         run: dotnet test tests/VoxPen.Core.Tests/VoxPen.Core.Tests.csproj --no-restore -c Release --logger "console;verbosity=normal"
 
       - name: Publish single-file exe
+        # 不加 --no-restore：让 publish 自己带上 -r win-x64 做 RID-aware restore。
+        # NuGet 包已缓存，实际只是 obj/assets 重算，代价 <10 秒。
         shell: pwsh
         run: |
           dotnet publish src/VoxPen.App/VoxPen.App.csproj `
-            -c Release -r win-x64 --self-contained true --no-restore `
+            -c Release -r win-x64 --self-contained true `
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true `
