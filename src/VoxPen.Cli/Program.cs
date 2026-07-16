@@ -250,14 +250,8 @@ static async Task<int> RunLiveModeAsync(IAsrEngine engine, AppConfig config, str
     using var pipeline = new DictationPipeline(
         hotkey, capture, engine, textOutput, config, foreground);
 
-    // 短按补发（只针对 CapsLock 有意义；其他键暂用同接口 stub）
-    pipeline.ShortPressDetected += (_, _) =>
-    {
-        if (string.Equals(config.Shortcut.Key, "caps_lock", StringComparison.OrdinalIgnoreCase))
-        {
-            textOutput.ResendCapsLock();
-        }
-    };
+    // 短按补发：只对 toggle 键（caps/num/scroll_lock）生效；非 toggle 键静默丢弃
+    pipeline.ShortPressDetected += (_, keyName) => textOutput.ResendToggleKey(keyName);
 
     pipeline.StateChanged += (_, s) =>
     {

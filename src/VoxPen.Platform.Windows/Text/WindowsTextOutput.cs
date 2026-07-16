@@ -103,6 +103,8 @@ public sealed class WindowsTextOutput : ITextOutput
     private const ushort VK_CONTROL = 0x11;
     private const ushort VK_V = 0x56;
     private const ushort VK_CAPITAL = 0x14;
+    private const ushort VK_NUMLOCK = 0x90;
+    private const ushort VK_SCROLL = 0x91;
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
@@ -170,20 +172,26 @@ public sealed class WindowsTextOutput : ITextOutput
     }
 
     /// <summary>
-    /// 合成一次 CapsLock 按下再松开。用于短按补发场景：
-    /// 若快捷键抑制期间用户短按 CapsLock (&lt; 阈值)，我们撤销录音并补发该键，
-    /// 让用户仍然能像平常一样切换大小写状态。
+    /// 短按补发一次 toggle 键（按下 + 松开），保留系统原生的切换语义。
     ///
-    /// 实现要点：
+    /// - 支持 <c>caps_lock / num_lock / scroll_lock</c>；其它键（F1..F12、鼠标侧键等）不是 toggle 键，
+    ///   短按补发没有意义，直接静默丢弃。
     /// - 补发**必须**离开全局 Hook 线程。否则同线程 <c>SendInput</c> 与刚抑制的物理事件
     ///   会踩到 LL 键盘 Hook 的时序死角，出现「合成调用成功但系统状态未翻转」的怪现象。
     /// - 补发前留出 <see cref="ResendDelayMs"/> 毫秒，让物理 KeyUp 的抑制完全落地。
     /// - 一次 <c>SendInput(2, …)</c> 提交 DOWN+UP 作为原子批次，减少中间被别的输入插入的概率。
     /// - 合成事件回流到 Hook 时由 <c>IsEventSimulated</c> 过滤掉，不会误触自身。
     /// </summary>
-    public void ResendCapsLock()
+    /// <param name="keyName">抽象键名（<c>caps_lock</c> / <c>num_lock</c> / <c>scroll_lock</c>）。</param>
+    /// <returns><see langword="true" /> 表示确实排队了一次补发；<see langword="false" /> 表示该键不是 toggle 键，什么都没做。</returns>
+    public bool ResendToggleKey(string keyName)
     {
-        Task.Run(static () =>
+        if (!TryMapToggleKey(keyName, out var vk))
+        {
+            return false;
+        }
+
+        Task.Run(() =>
         {
             try
             {
@@ -191,22 +199,48 @@ public sealed class WindowsTextOutput : ITextOutput
 
                 var inputs = new[]
                 {
-                    MakeKeyInput(VK_CAPITAL, keyUp: false),
-                    MakeKeyInput(VK_CAPITAL, keyUp: true),
+                    MakeKeyInput(vk, keyUp: false),
+                    MakeKeyInput(vk, keyUp: true),
                 };
                 var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
                 if (sent != inputs.Length)
                 {
                     Debug.WriteLine(
-                        $"[ResendCapsLock] SendInput sent {sent}/{inputs.Length}, " +
+                        $"[ResendToggleKey({keyName})] SendInput sent {sent}/{inputs.Length}, " +
                         $"LastError={Marshal.GetLastWin32Error()}");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ResendCapsLock] failed: {ex}");
+                Debug.WriteLine($"[ResendToggleKey({keyName})] failed: {ex}");
             }
         });
+        return true;
+    }
+
+    /// <summary>返回给定抽象键名是否为受支持的 toggle 键。</summary>
+    public static bool IsToggleKey(string keyName) => TryMapToggleKey(keyName, out _);
+
+    private static bool TryMapToggleKey(string keyName, out ushort vk)
+    {
+        switch ((keyName ?? string.Empty).Trim().ToLowerInvariant())
+        {
+            case "caps_lock":
+            case "capslock":
+                vk = VK_CAPITAL;
+                return true;
+            case "num_lock":
+            case "numlock":
+                vk = VK_NUMLOCK;
+                return true;
+            case "scroll_lock":
+            case "scrolllock":
+                vk = VK_SCROLL;
+                return true;
+            default:
+                vk = 0;
+                return false;
+        }
     }
 
     /// <summary>补发前的等待时间。参考原 CapsWriter-Offline 的 50 ms 延时。</summary>

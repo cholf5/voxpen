@@ -195,13 +195,11 @@ public sealed class AppHost : IDisposable
         // 通知钩子
         pipeline.NotificationHandler = host.HandleNotificationAsync;
 
-        // 短按补发：CapsLock 场景下把切换语义还给用户
-        pipeline.ShortPressDetected += (_, _) =>
+        // 短按补发：只对 toggle 键（caps/num/scroll_lock）生效，把切换语义还给用户；
+        // 其它键（F1..F12、鼠标侧键等）短按直接静默丢弃，避免误触发大小写。
+        pipeline.ShortPressDetected += (_, keyName) =>
         {
-            if (keyNames.Any(k => string.Equals(k, "caps_lock", StringComparison.OrdinalIgnoreCase)))
-            {
-                try { output.ResendCapsLock(); } catch { /* 忽略 */ }
-            }
+            try { output.ResendToggleKey(keyName); } catch { /* 忽略 */ }
         };
 
         // 首次加载 hot-rule.txt / hot.txt，启动监视

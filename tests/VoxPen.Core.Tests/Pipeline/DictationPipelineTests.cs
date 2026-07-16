@@ -74,6 +74,28 @@ public sealed class DictationPipelineTests
         pipeline.State.Should().Be(PipelineState.Idle);
     }
 
+    [Fact]
+    public void ShortPressDetected_CarriesTheTriggeringKeyName()
+    {
+        using var hotkey = new FakeHotkey();
+        using var capture = new FakeAudioCapture();
+        using var pipeline = new DictationPipeline(
+            hotkey,
+            capture,
+            new FakeAsr("不应识别"),
+            new FakeTextOutput(),
+            new AppConfig());
+
+        string? seen = null;
+        pipeline.ShortPressDetected += (_, key) => seen = key;
+
+        var t = DateTime.UtcNow;
+        hotkey.RaisePressed(t, key: "x2");
+        hotkey.RaiseReleased(t.AddSeconds(10), key: "x2");
+
+        seen.Should().Be("x2");
+    }
+
     private sealed class FakeHotkey : IGlobalHotkey
     {
         public event EventHandler<HotkeyEventArgs>? KeyPressed;
@@ -82,10 +104,10 @@ public sealed class DictationPipelineTests
         public void Start() { }
         public void Stop() { }
         public void Dispose() { }
-        public void RaisePressed(DateTime timestamp) => KeyPressed?.Invoke(this,
-            new HotkeyEventArgs { Key = "caps_lock", TimestampUtc = timestamp });
-        public void RaiseReleased(DateTime timestamp) => KeyReleased?.Invoke(this,
-            new HotkeyEventArgs { Key = "caps_lock", TimestampUtc = timestamp });
+        public void RaisePressed(DateTime timestamp, string key = "caps_lock") => KeyPressed?.Invoke(this,
+            new HotkeyEventArgs { Key = key, TimestampUtc = timestamp });
+        public void RaiseReleased(DateTime timestamp, string key = "caps_lock") => KeyReleased?.Invoke(this,
+            new HotkeyEventArgs { Key = key, TimestampUtc = timestamp });
     }
 
     private sealed class FakeAudioCapture : IAudioCapture

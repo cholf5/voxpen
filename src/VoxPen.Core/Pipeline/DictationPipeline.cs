@@ -44,8 +44,12 @@ public sealed class DictationPipeline : IDisposable
     /// <summary>状态变更（可能在任意线程触发；UI 层订阅时请 marshal 到 UI 线程）。</summary>
     public event EventHandler<PipelineState>? StateChanged;
 
-    /// <summary>短按误触发生。平台层应据此补发原按键（例如 CapsLock 用于切换大小写）。</summary>
-    public event EventHandler? ShortPressDetected;
+    /// <summary>
+    /// 短按误触发生。参数是**这次短按的抽象键名**（例如 <c>caps_lock</c> / <c>x2</c> / <c>f1</c>），
+    /// 平台层据此决定是否补发：只有 toggle 键（<c>caps_lock/num_lock/scroll_lock</c>）需要补发以保留原生语义，
+    /// F1..F12、鼠标侧键这类非 toggle 键短按只需静默丢弃即可。
+    /// </summary>
+    public event EventHandler<string>? ShortPressDetected;
 
     /// <summary>识别产出（未经过后处理管线之前）。</summary>
     public event EventHandler<string>? TextRecognized;
@@ -191,7 +195,7 @@ public sealed class DictationPipeline : IDisposable
 
         if (isShortPress)
         {
-            try { ShortPressDetected?.Invoke(this, EventArgs.Empty); } catch { }
+            try { ShortPressDetected?.Invoke(this, e.Key); } catch { }
             return;
         }
 
