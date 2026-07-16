@@ -20,6 +20,8 @@ public partial class App : Application
     private AppHost? _host;
     private MainWindow? _mainWindow;
     private MainWindowViewModel? _viewModel;
+    private RecordingOverlayWindow? _overlay;
+    private RecordingOverlayViewModel? _overlayVm;
 
     public override void Initialize()
     {
@@ -49,12 +51,21 @@ public partial class App : Application
             _mainWindow = new MainWindow { DataContext = _viewModel };
             desktop.MainWindow = _mainWindow;
 
+            // 录音状态浮窗：屏幕正中偏下的小卡片，随音量波动。
+            // 只在 Pipeline 进入 Recording 时显示，避免用户最小化主窗后不知道是否正在录音。
+            _overlayVm = new RecordingOverlayViewModel();
+            _overlay = new RecordingOverlayWindow();
+            _overlay.AttachViewModel(_overlayVm);
+            _host.Pipeline.StateChanged += (_, state) => Dispatcher.UIThread.Post(() => ApplyOverlayState(state));
+            _host.Pipeline.AudioLevelSampled += (_, level) => Dispatcher.UIThread.Post(() => _overlayVm?.Push(level));
+
             // 首次启动隐藏窗口，只留托盘图标
             _mainWindow.Show();
             _mainWindow.Hide();
 
             desktop.Exit += (_, _) =>
             {
+                try { _overlay?.Close(); } catch { }
                 try { _host?.Dispose(); } catch { }
             };
 
@@ -159,5 +170,23 @@ public partial class App : Application
             _mainWindow.WindowState = WindowState.Normal;
         }
         _mainWindow.Activate();
+    }
+
+    /// <summary>
+    /// Pipeline 状态变化时切换浮窗显隐：只在 Recording 时可见。
+    /// 保持窗口实例存活，仅 Show/Hide，避免频繁重建带来的闪烁。
+    /// </summary>
+    private void ApplyOverlayState(PipelineState state)
+    {
+        if (_overlay is null) return;
+        if (state == PipelineState.Recording)
+        {
+            if (!_overlay.IsVisible) _overlay.Show();
+        }
+        else
+        {
+            if (_overlay.IsVisible) _overlay.Hide();
+            _overlayVm?.Reset();
+        }
     }
 }

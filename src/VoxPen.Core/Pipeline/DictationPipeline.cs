@@ -54,6 +54,13 @@ public sealed class DictationPipeline : IDisposable
     /// <summary>识别产出（未经过后处理管线之前）。</summary>
     public event EventHandler<string>? TextRecognized;
 
+    /// <summary>
+    /// 录音期间的实时音量采样（每个音频块触发一次，值域 [0,1]，已做轻量归一化）。
+    /// 用途：UI 层的录音浮窗音波指示。仅在 <see cref="PipelineState.Recording"/> 状态下发射；
+    /// 事件在采集回调线程触发，订阅方请自行 marshal 到 UI 线程并避免耗时逻辑。
+    /// </summary>
+    public event EventHandler<float>? AudioLevelSampled;
+
     /// <summary>后处理管线钩子。默认恒等；P5 阶段接入 hot-rule / trash-punc / 前台应用策略。</summary>
     public Func<string, string> PostProcess { get; set; } = static s => s;
 
@@ -212,14 +219,42 @@ public sealed class DictationPipeline : IDisposable
 
     private void OnAudioChunk(object? sender, AudioChunkEventArgs e)
     {
+        bool isRecording;
         // 采集回调可能在原生线程；这里 lock 拷贝到 buffer，避免竞态
         lock (_stateLock)
         {
-            if (_state == PipelineState.Recording)
+            isRecording = _state == PipelineState.Recording;
+            if (isRecording)
             {
                 _buffer.AddRange(e.Samples);
             }
         }
+
+        if (isRecording)
+        {
+            var level = ComputeLevel(e.Samples);
+            try { AudioLevelSampled?.Invoke(this, level); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// 计算音频块的归一化能量（RMS），映射到 [0,1] 便于 UI 直接使用。
+    /// 语音 RMS 通常远小于 1，这里做温和放大 + clamp，让浮窗波动更明显。
+    /// </summary>
+    private static float ComputeLevel(float[] samples)
+    {
+        if (samples.Length == 0) return 0f;
+        double sumSq = 0;
+        for (int i = 0; i < samples.Length; i++)
+        {
+            var s = samples[i];
+            sumSq += s * s;
+        }
+        var rms = Math.Sqrt(sumSq / samples.Length);
+        var scaled = rms * 4.0; // 语音典型 RMS ~0.05..0.2，×4 提升到 0.2..0.8
+        if (scaled > 1.0) scaled = 1.0;
+        if (scaled < 0.0) scaled = 0.0;
+        return (float)scaled;
     }
 
     // ---------- 推理 + 上屏 ----------

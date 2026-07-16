@@ -1,0 +1,97 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:VoxPen.App.ViewModels"
+        x:Class="VoxPen.App.Views.RecordingOverlayWindow"
+        x:DataType="vm:RecordingOverlayViewModel"
+        Title="声写 · 录音"
+        Width="180" Height="56"
+        SystemDecorations="None"
+        CanResize="False"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Focusable="False"
+        ShowActivated="False"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        WindowStartupLocation="Manual">
+
+    <Design.DataContext>
+        <vm:RecordingOverlayViewModel />
+    </Design.DataContext>
+
+    <Border CornerRadius="14"
+            Background="#E60E0E12"
+            BorderBrush="#33FFFFFF"
+            BorderThickness="1"
+            BoxShadow="0 6 24 0 #66000000"
+            Padding="12,8">
+        <Grid ColumnDefinitions="Auto,10,*">
+
+            <!-- 麦克风图标 -->
+            <Grid Grid.Column="0" Width="20" Height="30" VerticalAlignment="Center">
+                <!-- 话筒头（圆角矩形） -->
+                <Border Width="10" Height="16"
+                        CornerRadius="5"
+                        Background="#FFFF4D4F"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Top"
+                        Margin="0,1,0,0" />
+                <!-- 底部弧形托 + 支杆（U 形） -->
+                <Path Stroke="#FFFF4D4F"
+                      StrokeThickness="1.6"
+                      StrokeLineCap="Round"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Bottom"
+                      Margin="0,0,0,1"
+                      Data="M 2,18 A 8,8 0 0 0 18,18 M 10,26 L 10,29 M 6,29 L 14,29" />
+            </Grid>
+
+            <!-- 声波条 -->
+            <Grid Grid.Column="2" Height="30" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="4">
+                    <Rectangle Width="4" Height="28" RadiusX="2" RadiusY="2"
+                               Fill="#FF7ED957"
+                               RenderTransformOrigin="0.5,1">
+                        <Rectangle.RenderTransform>
+                            <ScaleTransform ScaleY="{Binding Bar0}" />
+                        </Rectangle.RenderTransform>
+                    </Rectangle>
+                    <Rectangle Width="4" Height="28" RadiusX="2" RadiusY="2"
+                               Fill="#FFFFD666"
+                               RenderTransformOrigin="0.5,1">
+                        <Rectangle.RenderTransform>
+                            <ScaleTransform ScaleY="{Binding Bar1}" />
+                        </Rectangle.RenderTransform>
+                    </Rectangle>
+                    <Rectangle Width="4" Height="28" RadiusX="2" RadiusY="2"
+                               Fill="#FFFF7A45"
+                               RenderTransformOrigin="0.5,1">
+                        <Rectangle.RenderTransform>
+                            <ScaleTransform ScaleY="{Binding Bar2}" />
+                        </Rectangle.RenderTransform>
+                    </Rectangle>
+                    <Rectangle Width="4" Height="28" RadiusX="2" RadiusY="2"
+                               Fill="#FFFFD666"
+                               RenderTransformOrigin="0.5,1">
+                        <Rectangle.RenderTransform>
+                            <ScaleTransform ScaleY="{Binding Bar3}" />
+                        </Rectangle.RenderTransform>
+                    </Rectangle>
+                    <Rectangle Width="4" Height="28" RadiusX="2" RadiusY="2"
+                               Fill="#FF7ED957"
+                               RenderTransformOrigin="0.5,1">
+                        <Rectangle.RenderTransform>
+                            <ScaleTransform ScaleY="{Binding Bar4}" />
+                        </Rectangle.RenderTransform>
+                    </Rectangle>
+                </StackPanel>
+
+                <!-- 静音基线：始终保留一条淡淡的横线，让空录音时也有可视反馈 -->
+                <Rectangle Height="1" Fill="#33FFFFFF" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
