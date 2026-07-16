@@ -115,6 +115,79 @@ jobs:
           "$hash  $zip" | Out-File -FilePath "$zip.sha256" -Encoding ascii
           Write-Host "SHA256: $hash"
 
+      - name: Generate release notes
+        shell: pwsh
+        run: |
+          # 找到上一个 tag（首次发版时可能没有）
+          $prevTag = $null
+          $desc = git describe --tags --abbrev=0 2>$null
+          if ($LASTEXITCODE -eq 0 -and $desc) { $prevTag = $desc.Trim() }
+          $global:LASTEXITCODE = 0
+
+          if ($prevTag) {
+            $range = "$prevTag..HEAD"
+            Write-Host "Previous tag: $prevTag"
+          } else {
+            $range = 'HEAD'
+            Write-Host "First release, using full history"
+          }
+
+          # 拉取 commit（跳过 merge），格式："<hash> <subject>"
+          $raw = git log $range --no-merges --pretty=format:'%h %s'
+          if (-not $raw) { $raw = @() }
+
+          # 按 conventional commits 前缀分组（保持顺序）
+          $groups = [ordered]@{
+            '🚀 新功能' = New-Object System.Collections.Generic.List[string]
+            '🐛 修复'   = New-Object System.Collections.Generic.List[string]
+            '🔧 优化'   = New-Object System.Collections.Generic.List[string]
+            '📝 杂项'   = New-Object System.Collections.Generic.List[string]
+            '其他'      = New-Object System.Collections.Generic.List[string]
+          }
+
+          foreach ($line in @($raw)) {
+            if (-not $line) { continue }
+            if ($line -notmatch '^(\S+)\s+(.+)$') { continue }
+            $hash = $Matches[1]
+            $subject = $Matches[2]
+
+            $bucket = '其他'
+            $msg = $subject
+            if     ($subject -match '^(feat|feature)(\([^)]+\))?!?:\s*(.+)$') { $bucket = '🚀 新功能'; $msg = $Matches[3] }
+            elseif ($subject -match '^fix(\([^)]+\))?!?:\s*(.+)$')            { $bucket = '🐛 修复';   $msg = $Matches[2] }
+            elseif ($subject -match '^(refactor|perf)(\([^)]+\))?!?:\s*(.+)$'){ $bucket = '🔧 优化';   $msg = $Matches[3] }
+            elseif ($subject -match '^(docs|chore|build|ci|style|test)(\([^)]+\))?!?:\s*(.+)$') { $bucket = '📝 杂项'; $msg = $Matches[3] }
+
+            $groups[$bucket].Add("- $msg (``$hash``)")
+          }
+
+          # 组装 markdown
+          $md = New-Object System.Collections.Generic.List[string]
+          foreach ($key in $groups.Keys) {
+            if ($groups[$key].Count -gt 0) {
+              $md.Add("### $key")
+              $md.Add('')
+              foreach ($item in $groups[$key]) { $md.Add($item) }
+              $md.Add('')
+            }
+          }
+
+          if ($md.Count -eq 0) {
+            $md.Add('_本次版本无 commit 变更。_')
+            $md.Add('')
+          }
+
+          $repo = $env:GITHUB_REPOSITORY
+          if ($prevTag) {
+            $md.Add("**Full Changelog**: https://github.com/$repo/compare/$prevTag...v$env:VERSION")
+          } else {
+            $md.Add("**Full Changelog**: https://github.com/$repo/commits/v$env:VERSION")
+          }
+
+          $md -join "`n" | Out-File -FilePath notes.md -Encoding utf8
+          Write-Host '----- notes.md -----'
+          Get-Content notes.md | Write-Host
+
       - name: Create GitHub Release
         shell: pwsh
         env:
@@ -125,7 +198,7 @@ jobs:
             'release','create',"v$env:VERSION",
             $zip,"$zip.sha256",
             '--title',"VoxPen v$env:VERSION",
-            '--generate-notes',
+            '--notes-file','notes.md',
             '--target',$env:GITHUB_SHA
           )
           if ('${{ inputs.prerelease }}' -eq 'true') { $ghArgs += '--prerelease' }

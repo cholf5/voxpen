@@ -13,7 +13,7 @@
 | 校验 | 同名 `.sha256` 一并上传 |
 | 模型 | **不打入包**；首启缺 `models/paraformer/` 时由 App 提示用户下载 |
 | 验证 | Publish 前跑 `dotnet test tests/VoxPen.Core.Tests`；失败即终止 |
-| Release notes | `gh release create --generate-notes`，配 `.github/release.yml` 按 conventional commits 分组 |
+| Release notes | 自定义 PowerShell 步骤按 conventional commits 前缀（feat/fix/refactor+perf/docs+chore+build+ci+style+test）从 `git log` 分组，写 `notes.md`，`gh release create --notes-file` 采纳；`.github/release.yml` 保留供未来 PR 流程 |
 | tag / Release | 由 `gh release create v<ver> --target $GITHUB_SHA` 自动创建，失败不留残骸 |
 | 代码签名 | 不做（个人项目 ROI 不够）；SmartScreen 首次提示由 README 说明 |
 | pdb | 不打包也不上传，需要排错时本地重现构建 |
@@ -66,11 +66,12 @@
    - `<verNumeric>` = `inputs.version` 去掉 `-xxx` 后缀（`AssemblyVersion` 只接受 4 段数字）。完整字符串写进 `InformationalVersion`。
 7. PowerShell 组织 staging 目录，`Compress-Archive` 出 zip（zip 内根目录同名）
 8. `(Get-FileHash <zip> -Algorithm SHA256).Hash | Out-File <zip>.sha256`
-9. `gh release create v<ver> <zip> <zip>.sha256 --title "VoxPen v<ver>" --generate-notes --target $env:GITHUB_SHA`，若 `prerelease=true` 追加 `--prerelease`；`env: GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`
+9. **Generate release notes**：PowerShell 从 `git log <prevTag>..HEAD --no-merges` 按 conventional commits 前缀（`feat` / `fix` / `refactor|perf` / `docs|chore|build|ci|style|test` / 其他）分组，写入 `notes.md`，并在末尾附 `Full Changelog: .../compare/<prevTag>...v<ver>`。首次发版无 tag 时退化为 `HEAD` 全量并使用 `commits/v<ver>` 链接。
+10. `gh release create v<ver> <zip> <zip>.sha256 --title "VoxPen v<ver>" --notes-file notes.md --target $env:GITHUB_SHA`，若 `prerelease=true` 追加 `--prerelease`；`env: GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`
 
 失败策略：tag / Release 只在最后一步创建，前面任何步骤失败都不会留下悬空 tag。
 
-**Release notes 分组的现实**：`.github/release.yml` 的 category 走 **PR labels**，本仓库目前是单人直推 main，`--generate-notes` 出来会是扁平 commit 列表。`.github/release.yml` 仍保留，等未来引入 PR 流程后按 labels 自动分类。
+**Release notes 分组的现实**：GitHub 原生的 `--generate-notes` 走 **PR labels**，本仓库单人直推 main 用不上，所以改用自定义步骤基于 commit 前缀分组。`.github/release.yml` 仍保留，未来引入 PR 流程或手动切回 `--generate-notes` 时按 labels 自动分类。
 
 ## §3 zip 内容 & 首启体验
 

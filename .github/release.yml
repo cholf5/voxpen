@@ -1,7 +1,9 @@
-# Release notes 分组配置
-# 说明：GitHub 的自动生成 release notes 按 **PR 标签** 分组，本仓库目前是单人直推 main，
-# 所以 --generate-notes 出来的是扁平的 commit 列表。等未来引入 PR 流程后，
-# 给 PR 打上下列 labels 就会按此配置分类。
+# Release notes 分组配置（PR label 驱动）
+# 当前主用 workflow 里的 "Generate release notes" 步骤，从 git log 按 conventional commits
+# 前缀（feat/fix/refactor/perf/docs/chore/build/ci/style/test）自动分组，写入 notes.md
+# 通过 --notes-file 传给 gh release create。
+# 本文件用于**未来引入 PR 流程后**，让 GitHub 的自动 release notes 生成器也能按 label 分类
+# （例如手动改用 --generate-notes 或在 GitHub UI 上点 "Auto-generate release notes" 时生效）。
 changelog:
   categories:
     - title: 🚀 新功能
