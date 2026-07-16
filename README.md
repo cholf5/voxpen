@@ -115,7 +115,6 @@
   "notification": {                        // 新：Toast 通知
     "enabled": true,
     "showOnRecordingStart": false,
-    "showOnResult": true,
     "showOnError": true
   },
   "logLevel": "Information"
@@ -187,7 +186,7 @@ GitHub|吉他不
 
 ### Toast 通知
 
-`notification.showOnResult=true` 时，识别完成会在系统右下角弹一条含结果预览的 Toast；出错时弹错误 Toast。首次触发会自动创建 AUMID 和开始菜单快捷方式（Windows 10 1903+）。旧系统会静默降级。
+识别完成不再弹出 Toast；出错时仍可通过 `notification.showOnError` 弹错误 Toast。首次触发会自动创建 AUMID 和开始菜单快捷方式（Windows 10 1903+）。旧系统会静默降级。
 
 ### Markdown 日记
 

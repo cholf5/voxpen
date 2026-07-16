@@ -164,9 +164,6 @@ public sealed class NotificationConfig
     /// <summary>录音开始时弹通知（默认关，避免干扰）。</summary>
     public bool ShowOnRecordingStart { get; set; } = false;
 
-    /// <summary>识别完成时弹通知。</summary>
-    public bool ShowOnResult { get; set; } = true;
-
     /// <summary>发生错误时弹通知。</summary>
     public bool ShowOnError { get; set; } = true;
 }

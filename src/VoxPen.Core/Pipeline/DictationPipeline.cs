@@ -62,7 +62,7 @@ public sealed class DictationPipeline : IDisposable
     /// <summary>
     /// 通知钩子；P7 阶段可挂载 <see cref="INotificationService"/> 或自定义回调。
     /// 触发时机由 <see cref="NotificationConfig"/> 控制：
-    ///   录音开始（<c>Info</c>，可选）／识别完成（<c>Success</c>）／错误（<c>Error</c>）。
+    ///   录音开始（<c>Info</c>，可选）／错误（<c>Error</c>）。
     /// 异常会被吞掉，不影响主流程。
     /// </summary>
     public Func<NotificationKind, string, string, Task>? NotificationHandler { get; set; }
@@ -253,12 +253,6 @@ public sealed class DictationPipeline : IDisposable
 
             lock (_stateLock) { TransitionNoLock(PipelineState.Idle); }
 
-            if (_config.Notification.Enabled && _config.Notification.ShowOnResult
-                && !string.IsNullOrEmpty(finalText))
-            {
-                await FireNotificationAsync(NotificationKind.Success, "识别完成", finalText)
-                    .ConfigureAwait(false);
-            }
         }
         catch (Exception ex)
         {

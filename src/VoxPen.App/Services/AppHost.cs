@@ -403,7 +403,6 @@ public sealed class AppHost : IDisposable
 
             Config.Notification.Enabled = cfg.Notification.Enabled;
             Config.Notification.ShowOnRecordingStart = cfg.Notification.ShowOnRecordingStart;
-            Config.Notification.ShowOnResult = cfg.Notification.ShowOnResult;
             Config.Notification.ShowOnError = cfg.Notification.ShowOnError;
 
             Config.Hotword.MatchThreshold = cfg.Hotword.MatchThreshold;
