@@ -30,6 +30,12 @@ public sealed class ParaformerEngine : IAsrEngine
     public int SampleRate => TargetSampleRate;
     public bool IsLoaded => _recognizer is not null;
 
+    /// <summary>
+    /// Paraformer-zh 自身仅偶发从 tokens.txt 里带出个别 <c>，/。</c>，不能视为"自带标点"，
+    /// 因此不设置 <see cref="EngineCapabilities.Punctuation"/>；由外挂 <c>IPunctuator</c> 兜底。
+    /// </summary>
+    public EngineCapabilities Capabilities => EngineCapabilities.Timestamps;
+
     public ParaformerEngine(AsrConfig config)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));

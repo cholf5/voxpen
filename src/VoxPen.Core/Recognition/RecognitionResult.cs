@@ -5,7 +5,11 @@ namespace VoxPen.Core.Recognition;
 /// </summary>
 public sealed class RecognitionResult
 {
-    /// <summary>识别出的文本（未经过热词/规则/末尾标点处理）。</summary>
+    /// <summary>
+    /// 识别出的文本（未经过热词/规则处理；是否已包含标点取决于引擎能力：
+    /// 参见 <see cref="Abstractions.IAsrEngine.Capabilities"/> 中的
+    /// <see cref="Abstractions.EngineCapabilities.Punctuation"/> 位）。
+    /// </summary>
     public required string Text { get; init; }
 
     /// <summary>字级 token 列表（可为空数组）。</summary>

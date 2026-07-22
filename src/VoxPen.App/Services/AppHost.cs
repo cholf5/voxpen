@@ -47,6 +47,7 @@ public sealed class AppHost : IDisposable
     private readonly DiaryWriter? _diary;
     private readonly PhonemeCorrector? _phonemeCorrector;
     private readonly INotificationService _notifier;
+    private readonly IPunctuator _punctuator;
     private readonly IReadOnlyList<string> _hotkeyNames;
 
     private HotRuleReplacer _hotRule = HotRuleReplacer.Empty;
@@ -133,6 +134,7 @@ public sealed class AppHost : IDisposable
                     DiaryWriter? diary,
                     PhonemeCorrector? phonemeCorrector,
                     INotificationService notifier,
+                    IPunctuator punctuator,
                     DictationPipeline pipeline,
                     TrashPuncCleaner trashPunc)
     {
@@ -149,6 +151,7 @@ public sealed class AppHost : IDisposable
         _diary = diary;
         _phonemeCorrector = phonemeCorrector;
         _notifier = notifier;
+        _punctuator = punctuator;
         Pipeline = pipeline;
         _trashPunc = trashPunc;
     }
@@ -161,6 +164,8 @@ public sealed class AppHost : IDisposable
 
         // 发布目录优先；开发运行时允许从仓库根目录找到 models/。
         config.Asr.ModelDir = ModelDirectoryResolver.Resolve(appBaseDir, config.Asr.ModelDir);
+        config.Punctuation.ModelDir =
+            ModelDirectoryResolver.Resolve(appBaseDir, config.Punctuation.ModelDir);
 
         // 快捷键：优先使用 Keys 列表；否则退化为 Key
         var keyNames = config.Shortcut.Keys is { Count: > 0 }
@@ -200,11 +205,14 @@ public sealed class AppHost : IDisposable
             config.Postprocess.TrashPuncThreshold,
             config.Postprocess.TrashPuncApps);
 
+        // 标点补全：ASR 引擎已自带标点则跳过；否则按 model.onnx 是否存在决定装配 Sherpa 还是 Null。
+        IPunctuator punctuator = ResolvePunctuator(asr, config.Punctuation);
+
         var host = new AppHost(appBaseDir, configPath, config,
             hotkey, keyNames, capture, asr, output, foreground, archive,
-            diary, phonemeCorrector, notifier, pipeline, trashPunc);
+            diary, phonemeCorrector, notifier, punctuator, pipeline, trashPunc);
 
-        // 组装后处理管线：hot-rule (regex) → phoneme-rag → trash-punc
+        // 组装后处理管线：punctuator → hot-rule (regex) → phoneme-rag → trash-punc
         pipeline.PostProcess = host.RunPostProcess;
 
         // 录音归档 + 日记
@@ -242,6 +250,29 @@ public sealed class AppHost : IDisposable
         sw.Stop();
         Emit($"模型加载完成，耗时 {sw.ElapsedMilliseconds} ms");
 
+        // 标点模型：与 ASR 一样两阶段初始化。NullPunctuator 的 IsLoaded 恒为 true，天然跳过；
+        // SherpaPunctuator 加载失败时自身降级为原样返回，只在日志中告警。
+        if (!_punctuator.IsLoaded)
+        {
+            Emit($"开始加载标点模型：{Config.Punctuation.ModelDir}");
+            var puncSw = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                await _punctuator.LoadAsync().ConfigureAwait(false);
+                puncSw.Stop();
+                Emit($"标点模型加载完成（{_punctuator.Name}），耗时 {puncSw.ElapsedMilliseconds} ms");
+            }
+            catch (Exception ex)
+            {
+                puncSw.Stop();
+                Emit($"[punc] 标点模型加载失败，进入无标点模式：{ex.Message}");
+            }
+        }
+        else if (_punctuator is NullPunctuator)
+        {
+            Emit("标点补全未启用（未找到 model.onnx 或 ASR 已自带标点）");
+        }
+
         Pipeline.Start();
         Emit($"已监听快捷键：[{string.Join(", ", _hotkeyNames)}] (suppress={Config.Shortcut.Suppress})");
     }
@@ -260,6 +291,7 @@ public sealed class AppHost : IDisposable
         try { _hotkey.Dispose(); } catch { }
         try { _capture.Dispose(); } catch { }
         try { _asr.Dispose(); } catch { }
+        try { _punctuator.Dispose(); } catch { }
     }
 
     // ---------- 后处理 + 归档 ----------
@@ -268,7 +300,19 @@ public sealed class AppHost : IDisposable
     {
         if (string.IsNullOrEmpty(raw)) return raw;
 
+        // 顺序：标点补全 → hot-rule → phoneme-rag → trash-punc。
+        // 上游 CapsWriter-Offline 的 hot-rule.txt 用 [，。]? 邻位吞噬来吸掉
+        // 标点模型在"逗号/句号/问号/回车"周围可能多加的标点，因此标点必须在 hot-rule 之前。
         var text = raw;
+        try
+        {
+            text = _punctuator.AddPunctuation(text);
+        }
+        catch (Exception ex)
+        {
+            Emit($"[punc] 标点补全异常，跳过：{ex.Message}");
+        }
+
         if (Config.Postprocess.EnableHotRule)
         {
             text = _hotRule.Apply(text);
@@ -438,6 +482,35 @@ public sealed class AppHost : IDisposable
     }
 
     // ---------- 配置文件加载 ----------
+
+    /// <summary>
+    /// 根据 ASR 引擎能力位与配置决定注入哪种 <see cref="IPunctuator"/>。
+    ///
+    /// - 若引擎自带 <see cref="EngineCapabilities.Punctuation"/>：直接 NullPunctuator（不重复加标点）。
+    /// - 若配置的 <c>model.onnx</c> 不存在：NullPunctuator（用户未安装标点模型，走"无标点模式"）。
+    /// - 否则返回未加载的 <see cref="SherpaPunctuator"/>，由 <see cref="LoadAndStartAsync"/> 真正加载；
+    ///   加载失败时 SherpaPunctuator 内部自动降级为原样返回。
+    /// </summary>
+    private static IPunctuator ResolvePunctuator(IAsrEngine asr, PunctuationConfig cfg)
+    {
+        if ((asr.Capabilities & EngineCapabilities.Punctuation) != 0)
+        {
+            return NullPunctuator.Instance;
+        }
+
+        if (string.IsNullOrWhiteSpace(cfg.ModelDir))
+        {
+            return NullPunctuator.Instance;
+        }
+
+        var modelFile = Path.Combine(cfg.ModelDir, "model.onnx");
+        if (!File.Exists(modelFile))
+        {
+            return NullPunctuator.Instance;
+        }
+
+        return new SherpaPunctuator(modelFile, cfg.NumThreads, cfg.Provider);
+    }
 
     private static AppConfig LoadOrCreateConfig(string path)
     {

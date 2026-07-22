@@ -15,6 +15,15 @@ public interface IAsrEngine : IDisposable
     /// <summary>是否已加载模型。首次识别前请先 <see cref="LoadAsync"/>。</summary>
     bool IsLoaded { get; }
 
+    /// <summary>
+    /// 引擎自身具备的能力位。默认返回 <see cref="EngineCapabilities.None"/>，
+    /// 各具体实现应根据自身特性覆盖（例如 Paraformer 返回
+    /// <see cref="EngineCapabilities.Timestamps"/>，SenseVoice 返回
+    /// <see cref="EngineCapabilities.Punctuation"/> | <see cref="EngineCapabilities.Timestamps"/>）。
+    /// AppHost 会根据此位决定是否装配外挂标点模型等后处理组件。
+    /// </summary>
+    EngineCapabilities Capabilities => EngineCapabilities.None;
+
     /// <summary>加载模型。耗时可能较长（几百毫秒到几秒），建议后台调用。</summary>
     Task LoadAsync(CancellationToken cancellationToken = default);
 

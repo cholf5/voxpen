@@ -31,6 +31,9 @@ public sealed class AppConfig
     /// <summary>系统通知（Toast）设置。</summary>
     public NotificationConfig Notification { get; set; } = new();
 
+    /// <summary>标点模型设置（外挂 CT-Transformer 等；ASR 自带标点时会自动跳过）。</summary>
+    public PunctuationConfig Punctuation { get; set; } = new();
+
     /// <summary>日志级别：Trace/Debug/Info/Warn/Error。</summary>
     public string LogLevel { get; set; } = "Information";
 }
@@ -166,4 +169,21 @@ public sealed class NotificationConfig
 
     /// <summary>发生错误时弹通知。</summary>
     public bool ShowOnError { get; set; } = true;
+}
+
+/// <summary>
+/// 标点模型（如 sherpa-onnx CT-Transformer）设置。目录不存在时静默降级为"无标点模式"。
+/// 对齐上游 CapsWriter-Offline 的默认目录结构，方便复用同一份模型文件。
+/// </summary>
+public sealed class PunctuationConfig
+{
+    /// <summary>标点模型目录（相对应用根目录）。空字符串或路径不存在时禁用外挂标点。</summary>
+    public string ModelDir { get; set; } =
+        "models/Punct-CT-Transformer/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12";
+
+    /// <summary>推理线程数。</summary>
+    public int NumThreads { get; set; } = 2;
+
+    /// <summary>Provider：cpu / directml（当前 MVP 只用 cpu）。</summary>
+    public string Provider { get; set; } = "cpu";
 }
