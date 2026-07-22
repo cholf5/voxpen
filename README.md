@@ -78,7 +78,8 @@ A modern C# / .NET 8 / Avalonia rewrite of
 
 1. **Download the latest release** — grab `VoxPen-win-x64.zip` from the [Releases](../../releases) page and extract it anywhere, e.g. `D:\Apps\VoxPen\`.
 2. **Fetch a Paraformer model** (~229 MB). Recommended: the pre-packaged `Paraformer.zip` from [HaujetZhao/CapsWriter-Offline releases · models](https://github.com/HaujetZhao/CapsWriter-Offline/releases/tag/models) (mirrors on Chinese cloud drives, SHA-256 `a12a3f97...`). Upstream `sherpa-onnx-paraformer-zh-2023-09-14` from [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases) works too.
-3. **Flatten the model directory** into `models/paraformer/` next to the exe. Copy the *contents* of the extracted folder, not the folder itself:
+3. **(Optional) Fetch a punctuation model** (~278 MB). Paraformer itself does not emit punctuation — grab the sherpa-onnx CT-Transformer punctuation model `sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2` from [k2-fsa/sherpa-onnx-releases](https://github.com/k2-fsa/sherpa-onnx/releases/tag/punctuation-models) (mirror of the FunASR CT-Transformer). Without it, transcripts are punctuation-free and the trailing-punct heuristics in `hot-rule.txt` still work.
+4. **Flatten the model directories** next to the exe. Copy the *contents* of each extracted folder, not the folder itself:
 
    ```
    D:\Apps\VoxPen\
@@ -86,14 +87,18 @@ A modern C# / .NET 8 / Avalonia rewrite of
      ├─ config.json         ← auto-generated on first launch
      ├─ hot-rule.txt        ← bundled by publish; edit freely
      └─ models\
-        └─ paraformer\
-           ├─ model.onnx          (or model.int8.onnx)
-           ├─ tokens.txt
-           └─ …                   (am.mvn / config.yaml / …)
+        ├─ paraformer\
+        │  ├─ model.onnx          (or model.int8.onnx)
+        │  ├─ tokens.txt
+        │  └─ …                   (am.mvn / config.yaml / …)
+        └─ Punct-CT-Transformer\
+           └─ sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12\
+              ├─ model.onnx
+              └─ …                (tokens.json / etc.)
    ```
 
-4. **Launch `VoxPen.App.exe`.** A blue "C" icon appears in the system tray. First-time model load takes about 2–3 s.
-5. **Click into any text field, hold <kbd>CapsLock</kbd>, speak, release.** The transcript is typed at your cursor.
+5. **Launch `VoxPen.App.exe`.** A blue "C" icon appears in the system tray. First-time model load takes about 2–3 s.
+6. **Click into any text field, hold <kbd>CapsLock</kbd>, speak, release.** The transcript is typed at your cursor.
 
 ---
 
@@ -141,6 +146,11 @@ Auto-created on first launch next to the exe. Field names come from the upstream
     "diaryEnabled": true
   },
   "asr":     { "engine": "paraformer", "modelDir": "models/paraformer", "numThreads": 2, "provider": "cpu" },
+  "punctuation": {
+    "modelDir": "models/Punct-CT-Transformer/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12",
+    "numThreads": 2,
+    "provider": "cpu"
+  },
   "output":  { "mode": "Type", "restoreClipboard": true, "pasteApps": ["WeiXin.exe", "Telegram.exe"] },
   "postprocess": {
     "enableHotRule": true,
@@ -172,7 +182,7 @@ Auto-created on first launch next to the exe. Field names come from the upstream
 }
 ```
 
-**Hot reload:** edits to `config.json` / `hot-rule.txt` / `hot.txt` are picked up within ~3 s. Hotkey, model path, and diary root still require a restart.
+**Hot reload:** edits to `config.json` / `hot-rule.txt` / `hot.txt` are picked up within ~3 s. Hotkey, ASR model path, punctuation model path, and diary root still require a restart.
 
 **Supported keys for `shortcut.keys`:** `caps_lock`, `f13`..`f16`, `x1`, `x2`, `mouse_left`, `mouse_right`, `mouse_middle`. Any non-empty combination triggers on either key.
 
@@ -292,6 +302,9 @@ Output: `publish/win-x64/VoxPen.App.exe` (~100 MB from P7 on, up from ~53 MB at 
 # Post-process end-to-end (HotRule + TrashPunc)
 dotnet run --project src/VoxPen.Cli -- test-postprocess
 
+# Punctuation model smoke (loads CT-Transformer, needs the punct model directory)
+dotnet run --project src/VoxPen.Cli -- test-punc "你好世界这是一段没有标点的文本"
+
 # Phoneme RAG smoke (built-in fixtures, no model load)
 dotnet run --project src/VoxPen.Cli -- test-hotword
 
@@ -325,7 +338,8 @@ VoxPen/
 │  ├─ VoxPen.App/               Avalonia UI · Tray · AppHost (composition root)
 │  └─ VoxPen.Cli/               Headless smoke tests + batch transcribe
 ├─ tests/VoxPen.Core.Tests/     xUnit test suite (122 tests)
-├─ models/paraformer/           (your model — gitignored)
+├─ models/paraformer/           (your ASR model — gitignored)
+├─ models/Punct-CT-Transformer/ (optional punctuation model — gitignored)
 ├─ hot-rule.txt                 optional · 100% upstream-compatible regex rules
 ├─ hot.txt                      optional · phoneme-RAG hot-words
 ├─ config.json                  auto-generated on first launch
@@ -361,6 +375,7 @@ PowerShell `Remove-Item -Recurse` **follows junctions** and will wipe the real `
 - `config.json` is written on first launch by `AppHost.LoadOrCreateConfig` (includes P7 sections `transcribe / hotword / notification`).
 - `hot.txt` is opt-in — users drop their own, no default file is generated.
 - Missing `models/paraformer/` fails fast with `Model directory not found` and a clear log path — do not paper over this.
+- Missing punctuation model degrades gracefully to `NullPunctuator` (transcripts stay punctuation-free); a warning is logged pointing at `punctuation.modelDir`.
 
 ### Headless / CI env vars
 

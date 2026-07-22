@@ -18,17 +18,21 @@ using VoxPen.Platform.Windows.Text;
 // run                  : 常驻监听 CapsLock，按住说话松开上屏（P3 端到端）
 // transcribe <files>   : 批量文件转录（P7）
 // test-hotword / test-diary / test-merger : 冒烟命令，不加载模型
-// --model <dir>        : 覆盖模型目录
+// test-punc [<text>]   : 加载 CT-Transformer 标点模型，对文本加标点（需要标点模型目录）
+// --model <dir>        : 覆盖 ASR 模型目录
+// --punct-model <dir>  : 覆盖标点模型目录（默认 models/Punct-CT-Transformer/...）
 // --device <name>      : 偏好的输入设备名
 // --paste              : run 模式下默认使用剪贴板粘贴而非模拟打字
 // --no-suppress        : run 模式下不抑制 CapsLock 默认行为（调试用）
 string? filePath = null;
 string modelDir = "models/paraformer";
+string punctModelDir = "models/Punct-CT-Transformer/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12";
 string? deviceName = null;
 string mode = "interactive";
 bool paste = false;
 bool suppress = true;
 int autoExitSecs = 0;
+string puncTestText = "你好世界这是一段没有标点的文本这是第二句话对吗";
 
 // transcribe 专用参数
 var transcribeInputs = new List<string>();
@@ -44,9 +48,14 @@ for (int i = 0; i < args.Length; i++)
         case "test-hotword": mode = "test-hotword"; break;
         case "test-diary": mode = "test-diary"; break;
         case "test-merger": mode = "test-merger"; break;
+        case "test-punc":
+            mode = "test-punc";
+            if (i + 1 < args.Length && !args[i + 1].StartsWith("-")) puncTestText = args[++i];
+            break;
         case "transcribe": mode = "transcribe"; break;
         case "--file" when i + 1 < args.Length: filePath = args[++i]; mode = "file"; break;
         case "--model" when i + 1 < args.Length: modelDir = args[++i]; break;
+        case "--punct-model" when i + 1 < args.Length: punctModelDir = args[++i]; break;
         case "--device" when i + 1 < args.Length: deviceName = args[++i]; break;
         case "--paste": paste = true; break;
         case "--no-suppress": suppress = false; break;
@@ -81,6 +90,7 @@ if (mode == "test-postprocess") return RunPostProcessTest();
 if (mode == "test-hotword") return RunHotwordTest();
 if (mode == "test-diary") return RunDiaryTest();
 if (mode == "test-merger") return RunMergerTest();
+if (mode == "test-punc") return await RunPuncTestAsync(punctModelDir, puncTestText);
 
 var config = new AppConfig
 {
@@ -176,6 +186,63 @@ static int RunPostProcessTest()
     Console.WriteLine($"HotRule cases: {passed}/{cases.Length}");
     Console.WriteLine($"TrashPunc cases: {puncPassed}/{puncCases.Length}");
     return (passed == cases.Length && puncPassed == puncCases.Length) ? 0 : 1;
+}
+
+
+static async Task<int> RunPuncTestAsync(string modelDir, string text)
+{
+    Console.WriteLine();
+    Console.WriteLine("== Punctuation model smoke test (SherpaPunctuator) ==");
+
+    // 允许传目录或直接传 model.onnx；ModelDirectoryResolver 沿父目录回溯，便于开发运行时定位
+    var resolved = VoxPen.Core.Config.ModelDirectoryResolver.Resolve(AppContext.BaseDirectory, modelDir);
+    // 已带 .onnx 扩展名：直接用；否则按目录处理，追加 model.onnx（与 AppHost.ResolvePunctuator 一致）
+    var modelFile = resolved.EndsWith(".onnx", StringComparison.OrdinalIgnoreCase)
+        ? resolved
+        : Path.Combine(resolved, "model.onnx");
+
+    Console.WriteLine($"  model dir : {resolved}");
+    Console.WriteLine($"  model file: {modelFile}  (exists={File.Exists(modelFile)})");
+
+    if (!File.Exists(modelFile))
+    {
+        Console.WriteLine();
+        Console.WriteLine("FAIL: 未找到 model.onnx；请下载 sherpa-onnx-punct-ct-transformer-*，并放到");
+        Console.WriteLine("      models/Punct-CT-Transformer/... 或用 --punct-model 指定目录。");
+        return 2;
+    }
+
+    using var punctuator = new VoxPen.Platform.Windows.Recognition.SherpaPunctuator(modelFile, numThreads: 2, provider: "cpu");
+    Console.Write("Loading punctuation model ... ");
+    var sw = Stopwatch.StartNew();
+    try
+    {
+        await punctuator.LoadAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("FAILED");
+        Console.WriteLine(ex.Message);
+        return 3;
+    }
+    sw.Stop();
+    Console.WriteLine($"OK ({sw.ElapsedMilliseconds} ms)");
+
+    Console.WriteLine();
+    Console.WriteLine($"[in ] {text}");
+    var t = Stopwatch.StartNew();
+    var output = punctuator.AddPunctuation(text);
+    t.Stop();
+    Console.WriteLine($"[out] {output}");
+    Console.WriteLine($"[t  ] {t.ElapsedMilliseconds} ms");
+
+    // 冒烟判定：输出应非空，且长度不小于输入（标点只增不减）
+    var okNonEmpty = !string.IsNullOrWhiteSpace(output);
+    var okLen = output.Length >= text.Length;
+    Console.WriteLine();
+    Console.WriteLine($"  [{(okNonEmpty ? "OK" : "FAIL")}] 输出非空");
+    Console.WriteLine($"  [{(okLen ? "OK" : "FAIL")}] 输出长度 ≥ 输入长度（{output.Length} vs {text.Length}）");
+    return (okNonEmpty && okLen) ? 0 : 1;
 }
 
 
@@ -292,10 +359,13 @@ static void PrintHelp()
     Console.WriteLine("  VoxPen.Cli transcribe <files...>      batch transcribe (60s/4s overlap)");
     Console.WriteLine("       [--seg-duration N] [--seg-overlap N] [--no-srt] [--no-json] [--no-txt] [--merge]");
     Console.WriteLine("  VoxPen.Cli test-postprocess           smoke: hot-rule + trash-punc");
+    Console.WriteLine("  VoxPen.Cli test-punc [\"<text>\"]       smoke: CT-Transformer punctuation model");
+    Console.WriteLine("       [--punct-model <dir>]");
     Console.WriteLine("  VoxPen.Cli test-hotword               smoke: phoneme RAG");
     Console.WriteLine("  VoxPen.Cli test-diary                 smoke: diary writer");
     Console.WriteLine("  VoxPen.Cli test-merger                smoke: segment merger");
-    Console.WriteLine("  VoxPen.Cli --model <dir>              override model directory");
+    Console.WriteLine("  VoxPen.Cli --model <dir>              override ASR model directory");
+    Console.WriteLine("  VoxPen.Cli --punct-model <dir>        override punctuation model directory");
     Console.WriteLine("  VoxPen.Cli --device <name substring>  pick input device");
 }
 
