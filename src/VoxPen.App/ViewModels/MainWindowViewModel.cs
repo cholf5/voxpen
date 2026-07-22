@@ -26,6 +26,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly AppConfig _config;
     private readonly StringBuilder _log = new();
     private CancellationTokenSource? _modelCheckCancellation;
+    private CancellationTokenSource? _punctModelCheckCancellation;
 
     [ObservableProperty] private string _stateLabel = "就绪";
     [ObservableProperty] private IBrush _stateBrush = Brushes.Gray;
@@ -35,6 +36,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private string _modelStatusText = "正在检测模型…";
     [ObservableProperty] private string _modelDownloadHint = "";
     [ObservableProperty] private string _modelSaveStatus = "";
+    [ObservableProperty] private string _punctModelDir =
+        "models/Punct-CT-Transformer/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12";
+    [ObservableProperty] private string _punctModelStatusIcon = "…";
+    [ObservableProperty] private string _punctModelStatusText = "正在检测标点模型…";
+    [ObservableProperty] private string _punctModelDownloadHint = "";
+    [ObservableProperty] private string _punctModelSaveStatus = "";
     [ObservableProperty] private string _outputModeLabel = "模拟打字";
     [ObservableProperty] private string _pasteAppsLabel = "";
     [ObservableProperty] private string _logText = "";
@@ -46,6 +53,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public bool HasStartupError => !string.IsNullOrEmpty(StartupError);
 
     public bool HasModelDownloadHint => !string.IsNullOrEmpty(ModelDownloadHint);
+
+    public bool HasPunctModelDownloadHint => !string.IsNullOrEmpty(PunctModelDownloadHint);
 
     public bool IsExiting { get; private set; }
 
@@ -75,6 +84,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private void RefreshConfigLabels()
     {
         ModelDir = _config.Asr.ModelDir;
+        PunctModelDir = _config.Punctuation.ModelDir;
         var configuredKey = _config.Shortcut.Keys.FirstOrDefault() ?? _config.Shortcut.Key;
         SelectedShortcut = ShortcutSettings.Options.FirstOrDefault(option =>
             string.Equals(option.Key, configuredKey, StringComparison.OrdinalIgnoreCase))
@@ -87,6 +97,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     partial void OnModelDirChanged(string value) => _ = DetectModelAsync(value);
+
+    partial void OnPunctModelDirChanged(string value) => _ = DetectPunctModelAsync(value);
 
     private async Task DetectModelAsync(string modelDir)
     {
@@ -119,6 +131,43 @@ public sealed partial class MainWindowViewModel : ObservableObject
             ModelStatusIcon = "❌";
             ModelStatusText = $"检测失败：{ex.Message}";
             ModelDownloadHint = $"请下载 {ModelDownloadInfo.PackageName}：{ModelDownloadInfo.DownloadUrl}";
+        }
+    }
+
+    private async Task DetectPunctModelAsync(string modelDir)
+    {
+        _punctModelCheckCancellation?.Cancel();
+        _punctModelCheckCancellation?.Dispose();
+        _punctModelCheckCancellation = new CancellationTokenSource();
+        var cancellationToken = _punctModelCheckCancellation.Token;
+
+        PunctModelStatusIcon = "…";
+        PunctModelStatusText = "正在检测标点模型…";
+        try
+        {
+            await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+            var result = _host is null
+                ? PunctuationModelValidator.Validate(modelDir)
+                : _host.ValidatePunctuationDirectory(modelDir);
+            if (cancellationToken.IsCancellationRequested) return;
+
+            PunctModelStatusIcon = result.IsValid ? "✅" : "❌";
+            PunctModelStatusText = result.IsValid
+                ? (_host?.IsPunctuationLoadedFor(modelDir) == true
+                    ? "标点模型已加载"
+                    : "标点模型文件完整，重启后生效")
+                : result.Message;
+            PunctModelDownloadHint = result.IsValid
+                ? ""
+                : $"请下载 {PunctuationModelDownloadInfo.PackageName}：{PunctuationModelDownloadInfo.DownloadUrl}";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            PunctModelStatusIcon = "❌";
+            PunctModelStatusText = $"检测失败：{ex.Message}";
+            PunctModelDownloadHint =
+                $"请下载 {PunctuationModelDownloadInfo.PackageName}：{PunctuationModelDownloadInfo.DownloadUrl}";
         }
     }
 
@@ -159,6 +208,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     partial void OnStartupErrorChanged(string value) => OnPropertyChanged(nameof(HasStartupError));
 
     partial void OnModelDownloadHintChanged(string value) => OnPropertyChanged(nameof(HasModelDownloadHint));
+
+    partial void OnPunctModelDownloadHintChanged(string value) => OnPropertyChanged(nameof(HasPunctModelDownloadHint));
 
     [RelayCommand]
     private async Task CopyLatestAsync()
@@ -212,6 +263,27 @@ public sealed partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             ModelSaveStatus = $"保存失败：{ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void SavePunctuationDirectory()
+    {
+        if (_host is null)
+        {
+            PunctModelSaveStatus = "设计预览模式不可保存";
+            return;
+        }
+
+        try
+        {
+            _host.SavePunctuationDirectory(PunctModelDir);
+            PunctModelSaveStatus = "已保存，重启应用后生效";
+            _ = DetectPunctModelAsync(PunctModelDir);
+        }
+        catch (Exception ex)
+        {
+            PunctModelSaveStatus = $"保存失败：{ex.Message}";
         }
     }
 

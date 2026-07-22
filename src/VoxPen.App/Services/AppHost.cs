@@ -121,6 +121,55 @@ public sealed class AppHost : IDisposable
         }
     }
 
+    /// <summary>校验标点模型目录（存在性 + <c>model.onnx</c>）。UI"状态灯"面板消费。</summary>
+    public ModelDirectoryValidation ValidatePunctuationDirectory(string modelDir)
+    {
+        var resolved = ModelDirectoryResolver.Resolve(_appBaseDir, modelDir);
+        return PunctuationModelValidator.Validate(resolved);
+    }
+
+    /// <summary>
+    /// 判定"用户在 UI 里填的这个目录 == 当前实际加载的标点模型目录"。
+    /// NullPunctuator（未启用标点或引擎自带）视为未加载。
+    /// </summary>
+    public bool IsPunctuationLoadedFor(string modelDir)
+    {
+        if (_punctuator is not SherpaPunctuator sherpa) return false;
+        if (!sherpa.IsLoaded) return false;
+
+        var resolvedTarget = ModelDirectoryResolver.Resolve(_appBaseDir, modelDir);
+        // Config.Punctuation.ModelDir 在 Create 里已被 Resolver 展平为绝对路径。
+        return string.Equals(
+            Path.GetFullPath(resolvedTarget),
+            Path.GetFullPath(Config.Punctuation.ModelDir),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 保存标点模型目录；序列化整份 <see cref="AppConfig"/>，顺带把老 config.json
+    /// 缺失的 <c>punctuation</c> 段补写回磁盘。切换到新模型需要重启应用。
+    /// </summary>
+    public void SavePunctuationDirectory(string modelDir)
+    {
+        if (string.IsNullOrWhiteSpace(modelDir))
+            throw new ArgumentException("标点模型目录不能为空", nameof(modelDir));
+
+        var oldModelDir = Config.Punctuation.ModelDir;
+        var tempPath = $"{_configPath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            Config.Punctuation.ModelDir = modelDir.Trim();
+            var json = JsonSerializer.Serialize(Config, SerializerOptions);
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, _configPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+            Config.Punctuation.ModelDir = oldModelDir;
+        }
+    }
+
     private AppHost(string appBaseDir,
                     string configPath,
                     AppConfig config,
