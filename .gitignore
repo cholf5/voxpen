@@ -64,7 +64,7 @@ publish/
 # User data (do NOT commit local config or logs)
 logs/
 config.json
-models/
+/models/
 recordings/
 *.log
 
@@ -73,3 +73,4 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 .zcode/
+.VSCodeCounter/

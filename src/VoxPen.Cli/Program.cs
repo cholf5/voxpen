@@ -19,14 +19,12 @@ using VoxPen.Platform.Windows.Text;
 // transcribe <files>   : 批量文件转录（P7）
 // test-hotword / test-diary / test-merger : 冒烟命令，不加载模型
 // test-punc [<text>]   : 加载 CT-Transformer 标点模型，对文本加标点（需要标点模型目录）
-// --model <dir>        : 覆盖 ASR 模型目录
-// --punct-model <dir>  : 覆盖标点模型目录（默认 models/Punct-CT-Transformer/...）
+// --engine <name>      : 选择 ASR 引擎（paraformer / sensevoice / fun_asr_nano / qwen_asr）
 // --device <name>      : 偏好的输入设备名
 // --paste              : run 模式下默认使用剪贴板粘贴而非模拟打字
 // --no-suppress        : run 模式下不抑制 CapsLock 默认行为（调试用）
 string? filePath = null;
-string modelDir = "models/paraformer";
-string punctModelDir = "models/Punct-CT-Transformer/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12";
+AsrEngineKind engineKind = AsrEngineKind.Paraformer;
 string? deviceName = null;
 string mode = "interactive";
 bool paste = false;
@@ -54,8 +52,21 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "transcribe": mode = "transcribe"; break;
         case "--file" when i + 1 < args.Length: filePath = args[++i]; mode = "file"; break;
-        case "--model" when i + 1 < args.Length: modelDir = args[++i]; break;
-        case "--punct-model" when i + 1 < args.Length: punctModelDir = args[++i]; break;
+        case "--model" or "--punct-model":
+            Console.Error.WriteLine("模型目录由 VoxPen 固定管理；请将模型复制到程序约定的 models/ 目录。");
+            return 2;
+        case "--engine" when i + 1 < args.Length:
+            var engineName = args[++i].Trim().ToLowerInvariant();
+            if (engineName is "paraformer") engineKind = AsrEngineKind.Paraformer;
+            else if (engineName is "sensevoice") engineKind = AsrEngineKind.SenseVoice;
+            else if (engineName is "fun_asr_nano") engineKind = AsrEngineKind.FunAsrNano;
+            else if (engineName is "qwen_asr") engineKind = AsrEngineKind.QwenAsr;
+            else
+            {
+                Console.Error.WriteLine("未知引擎。可选：paraformer、sensevoice、fun_asr_nano、qwen_asr。");
+                return 2;
+            }
+            break;
         case "--device" when i + 1 < args.Length: deviceName = args[++i]; break;
         case "--paste": paste = true; break;
         case "--no-suppress": suppress = false; break;
@@ -81,6 +92,9 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 
+var modelDir = AsrModelCatalog.Get(engineKind).DefaultModelDir;
+var punctModelDir = ModelDirectoryConvention.PunctuationModelDirectory;
+
 Console.WriteLine("VoxPen CLI");
 Console.WriteLine($"Mode           : {mode}");
 Console.WriteLine($"Model dir      : {Path.GetFullPath(modelDir)}");
@@ -94,14 +108,14 @@ if (mode == "test-punc") return await RunPuncTestAsync(punctModelDir, puncTestTe
 
 var config = new AppConfig
 {
-    Asr = { ModelDir = modelDir, NumThreads = 2, Provider = "cpu" },
+    Asr = { Engine = engineKind, ModelDir = modelDir, NumThreads = 2, Provider = "cpu" },
     Output = { Mode = paste ? OutputMode.Paste : OutputMode.Type, RestoreClipboard = true },
     Shortcut = { Key = "caps_lock", Suppress = suppress, ShortPressThresholdSeconds = 0.3 },
 };
 
-using IAsrEngine engine = new ParaformerEngine(config.Asr);
+using IAsrEngine engine = WindowsAsrEngineFactory.Create(config.Asr);
 
-Console.Write("Loading Paraformer model ... ");
+Console.Write($"Loading {engine.Name} model ... ");
 var loadSw = Stopwatch.StartNew();
 try
 {
@@ -208,7 +222,7 @@ static async Task<int> RunPuncTestAsync(string modelDir, string text)
     {
         Console.WriteLine();
         Console.WriteLine("FAIL: 未找到 model.onnx；请下载 sherpa-onnx-punct-ct-transformer-*，并放到");
-        Console.WriteLine("      models/Punct-CT-Transformer/... 或用 --punct-model 指定目录。");
+        Console.WriteLine("      models/Punct-CT-Transformer/... 目录。");
         return 2;
     }
 
@@ -360,12 +374,10 @@ static void PrintHelp()
     Console.WriteLine("       [--seg-duration N] [--seg-overlap N] [--no-srt] [--no-json] [--no-txt] [--merge]");
     Console.WriteLine("  VoxPen.Cli test-postprocess           smoke: hot-rule + trash-punc");
     Console.WriteLine("  VoxPen.Cli test-punc [\"<text>\"]       smoke: CT-Transformer punctuation model");
-    Console.WriteLine("       [--punct-model <dir>]");
     Console.WriteLine("  VoxPen.Cli test-hotword               smoke: phoneme RAG");
     Console.WriteLine("  VoxPen.Cli test-diary                 smoke: diary writer");
     Console.WriteLine("  VoxPen.Cli test-merger                smoke: segment merger");
-    Console.WriteLine("  VoxPen.Cli --model <dir>              override ASR model directory");
-    Console.WriteLine("  VoxPen.Cli --punct-model <dir>        override punctuation model directory");
+    Console.WriteLine("  VoxPen.Cli --engine <name>            paraformer / sensevoice / fun_asr_nano / qwen_asr");
     Console.WriteLine("  VoxPen.Cli --device <name substring>  pick input device");
 }
 

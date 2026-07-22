@@ -87,7 +87,7 @@ public partial class App : Application
             // 启动前先做一次模型预校验：目录 / model.onnx / tokens.txt 缺任何一样，
             // 都立刻显示主窗 + 红色横幅 + Toast + 日志，指引下载。
             // 通过后再走后台加载模型 + 启动 hook 流程。
-            var validation = _host.ValidateModelDirectory(_host.Config.Asr.ModelDir);
+            var validation = _host.ValidateModelDirectory(_host.Config.Asr.Engine);
             if (!validation.IsValid)
             {
                 var msg = ModelDownloadInfo.FormatMissingModelHint(_host.Config.Asr.ModelDir, validation.Message);

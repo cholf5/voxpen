@@ -73,11 +73,12 @@ public sealed class AudioConfig
 
 public sealed class AsrConfig
 {
-    /// <summary>ASR 引擎类型（当前仅 "paraformer"）。</summary>
-    public string Engine { get; set; } = "paraformer";
+    /// <summary>ASR 引擎类型。缺失时保持兼容地使用 Paraformer。</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public AsrEngineKind Engine { get; set; } = AsrEngineKind.Paraformer;
 
     /// <summary>模型目录（含 model.int8.onnx / tokens.txt）。</summary>
-    public string ModelDir { get; set; } = "models/paraformer";
+    public string ModelDir { get; set; } = AsrModelCatalog.Get(AsrEngineKind.Paraformer).DefaultModelDir;
 
     /// <summary>推理线程数。</summary>
     public int NumThreads { get; set; } = 2;
@@ -178,8 +179,7 @@ public sealed class NotificationConfig
 public sealed class PunctuationConfig
 {
     /// <summary>标点模型目录（相对应用根目录）。空字符串或路径不存在时禁用外挂标点。</summary>
-    public string ModelDir { get; set; } =
-        "models/Punct-CT-Transformer/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12";
+    public string ModelDir { get; set; } = ModelDirectoryConvention.PunctuationModelDirectory;
 
     /// <summary>推理线程数。</summary>
     public int NumThreads { get; set; } = 2;

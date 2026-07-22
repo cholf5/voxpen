@@ -87,47 +87,32 @@
                                    Opacity="0.75"
                                    TextWrapping="Wrap" />
 
-                        <TextBlock Text="模型目录" FontWeight="SemiBold" Margin="0,8,0,0" />
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                            <TextBox Grid.Column="0"
-                                     Text="{Binding ModelDir, UpdateSourceTrigger=PropertyChanged}"
-                                     PlaceholderText="模型目录路径" />
-                            <TextBlock Grid.Column="1"
-                                       Text="{Binding ModelStatusIcon}"
-                                       FontSize="18"
-                                       VerticalAlignment="Center" />
-                        </Grid>
-                        <TextBlock Text="{Binding ModelStatusText}" Opacity="0.75" TextWrapping="Wrap" />
-                        <SelectableTextBlock Text="{Binding ModelDownloadHint}"
-                                             IsVisible="{Binding HasModelDownloadHint}"
-                                             Foreground="#FFD32F2F"
-                                             FontSize="12"
-                                             TextWrapping="Wrap" />
-                        <Button Content="保存模型目录"
-                                Command="{Binding SaveModelDirectoryCommand}"
-                                HorizontalAlignment="Left" />
-                        <TextBlock Text="{Binding ModelSaveStatus}" Opacity="0.75" TextWrapping="Wrap" />
+                        <TextBlock Text="识别模型" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <ComboBox ItemsSource="{Binding AsrModels}"
+                                  SelectedItem="{Binding SelectedAsrModel}"
+                                  HorizontalAlignment="Left" MinWidth="260">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding DisplayName}" />
+                                        <TextBlock Text="{Binding Description}" FontSize="11" Opacity="0.65" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="{Binding SelectedAsrModel.Description}" Opacity="0.75" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="下载模型" Command="{Binding DownloadSelectedModelCommand}" />
+                            <Button Content="取消下载" Command="{Binding CancelModelDownloadCommand}"
+                                    IsEnabled="{Binding IsModelDownloading}" />
+                        </StackPanel>
+                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding ModelDownloadPercent}"
+                                     IsVisible="{Binding IsModelDownloading}" Height="8" />
+                        <TextBlock Text="{Binding ModelDownloadStatus}" Opacity="0.75" TextWrapping="Wrap" />
 
-                        <TextBlock Text="标点模型" FontWeight="SemiBold" Margin="0,8,0,0" />
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                            <TextBox Grid.Column="0"
-                                     Text="{Binding PunctModelDir, UpdateSourceTrigger=PropertyChanged}"
-                                     PlaceholderText="标点模型目录路径（含 model.onnx）" />
-                            <TextBlock Grid.Column="1"
-                                       Text="{Binding PunctModelStatusIcon}"
-                                       FontSize="18"
-                                       VerticalAlignment="Center" />
-                        </Grid>
-                        <TextBlock Text="{Binding PunctModelStatusText}" Opacity="0.75" TextWrapping="Wrap" />
-                        <SelectableTextBlock Text="{Binding PunctModelDownloadHint}"
-                                             IsVisible="{Binding HasPunctModelDownloadHint}"
-                                             Foreground="#FFD32F2F"
-                                             FontSize="12"
-                                             TextWrapping="Wrap" />
-                        <Button Content="保存标点模型目录"
-                                Command="{Binding SavePunctuationDirectoryCommand}"
-                                HorizontalAlignment="Left" />
-                        <TextBlock Text="{Binding PunctModelSaveStatus}" Opacity="0.75" TextWrapping="Wrap" />
+                        <TextBlock Text="模型状态" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="{Binding ModelStatusIcon}" FontSize="18" />
+                        <TextBlock Text="{Binding ModelStatusText}" Opacity="0.75" TextWrapping="Wrap" />
 
                         <TextBlock Text="上屏模式" FontWeight="SemiBold" Margin="0,8,0,0" />
                         <TextBlock Text="{Binding OutputModeLabel}" Opacity="0.75" />

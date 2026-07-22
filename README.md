@@ -26,11 +26,12 @@ A modern C# / .NET 8 / Avalonia rewrite of
 - ⌨️ **Push-to-talk on <kbd>CapsLock</kbd>.** Hold to record, release to transcribe and type the result into whatever window has focus.
 - 🔡 **Short press keeps its native meaning.** A tap shorter than 0.3 s still toggles CapsLock (VoxPen re-emits the key for you).
 - 🔁 **100% `hot-rule.txt` compatible.** Regex/literal replacements with `\1..\n` backreferences behave exactly like the upstream Python project — bring your existing files.
+- 🧠 **Four offline ASR engines.** Choose Paraformer, SenseVoice-Small, Fun-ASR-Nano, or Qwen3-ASR from Settings; download compatible models in-app with live progress and resume.
 - 🧠 **Phoneme RAG hot-words.** `hot.txt` is loaded through a Chinese pinyin phoneme index for fuzzy correction that survives common ASR mishears.
 - 📂 **Offline batch transcription.** Turn `.mp3 / .m4a / .wav / .flac / .mp4 / .opus / …` into `.txt / .srt / .json / .merge.txt` from the CLI.
 - 📓 **Optional Markdown diary.** Every utterance is archived with its WAV under `recordings/YYYY/MM/DD.md`, one Typora regex away from an inline `<audio controls>` player.
 - 🔥 **Hot reload.** Edits to `config.json`, `hot-rule.txt`, and `hot.txt` apply in ~3 s without restarting.
-- 📦 **Single-file exe.** `dotnet publish` produces one self-contained `~100 MB` executable — bring your own model directory and go.
+- 📦 **Single-file exe.** `dotnet publish` produces one self-contained `~100 MB` executable; models use fixed directories under `models/`.
 
 > **Status:** Windows 10/11 x64 · v2 P7 shipped (P1–P7 complete). macOS / Linux abstractions are already in `VoxPen.Core`; concrete implementations are the next milestone.
 
@@ -122,7 +123,7 @@ A modern C# / .NET 8 / Avalonia rewrite of
 ### Main window
 
 - **History** — the last 50 transcripts, one-click copy the latest
-- **Settings** — model directory, model validity indicator, hotkey picker/save (model path & hotkey changes require restart)
+- **Settings** — choose/download a model, live download progress, model validity indicator, hotkey picker/save (model choice and hotkey changes require restart)
 - **Log** — live stream of model load, hot-rule reloads, recognition errors, etc.
 
 > The window's close button minimizes to tray. Use the tray menu or the in-window "Exit" button to actually quit.
@@ -145,7 +146,7 @@ Auto-created on first launch next to the exe. Field names come from the upstream
     "audioNameLength": 20,
     "diaryEnabled": true
   },
-  "asr":     { "engine": "paraformer", "modelDir": "models/paraformer", "numThreads": 2, "provider": "cpu" },
+  "asr":     { "engine": "Paraformer", "modelDir": "models/paraformer", "numThreads": 2, "provider": "cpu" },
   "punctuation": {
     "modelDir": "models/Punct-CT-Transformer/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12",
     "numThreads": 2,
@@ -182,7 +183,9 @@ Auto-created on first launch next to the exe. Field names come from the upstream
 }
 ```
 
-**Hot reload:** edits to `config.json` / `hot-rule.txt` / `hot.txt` are picked up within ~3 s. Hotkey, ASR model path, punctuation model path, and diary root still require a restart.
+**Models:** Settings downloads official sherpa-onnx-compatible packages to fixed paths under `models/`, shows progress/speed, and resumes an interrupted download. The supported engine values are `Paraformer`, `SenseVoice`, `FunAsrNano`, and `QwenAsr`. Qwen3-ASR does not provide word timestamps. To reuse an existing model, copy its files into the matching fixed directory; model paths cannot be selected in the app or CLI.
+
+**Hot reload:** edits to `config.json` / `hot-rule.txt` / `hot.txt` are picked up within ~3 s. Hotkey, ASR model choice, and diary root still require a restart. Legacy `asr.modelDir` and `punctuation.modelDir` values are ignored.
 
 **Supported keys for `shortcut.keys`:** `caps_lock`, `f13`..`f16`, `x1`, `x2`, `mouse_left`, `mouse_right`, `mouse_middle`. Any non-empty combination triggers on either key.
 
@@ -294,7 +297,7 @@ dotnet publish src/VoxPen.App/VoxPen.App.csproj ^
 
 Output: `publish/win-x64/VoxPen.App.exe` (~100 MB from P7 on, up from ~53 MB at P6 — growth is NAudio + Toolkit.Uwp.Notifications + ToolGood.Words.Pinyin). The exe self-contains the .NET runtime and every native dependency (sherpa-onnx, PortAudio, SharpHook, MediaFoundation).
 
-`hot-rule.txt` is bundled into `publish/` automatically. `config.json` is written on first launch next to the exe. Users just need to drop in `models/paraformer/`.
+`hot-rule.txt` is bundled into `publish/` automatically. `config.json` is written on first launch next to the exe. Users can download a model in Settings, or copy an existing model into its fixed directory under `models/`.
 
 ### CLI smoke tests
 

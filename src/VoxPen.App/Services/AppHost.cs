@@ -9,12 +9,14 @@ using VoxPen.Core.Config;
 using VoxPen.Core.Hotword;
 using VoxPen.Core.Hotword.Phoneme;
 using VoxPen.Core.Notification;
+using VoxPen.Core.Models;
 using VoxPen.Core.Pipeline;
 using VoxPen.Core.Postprocess;
 using VoxPen.Core.Storage;
 using VoxPen.Platform.Windows.Audio;
 using VoxPen.Platform.Windows.Hooks;
 using VoxPen.Platform.Windows.Notifications;
+using VoxPen.Platform.Windows.Models;
 using VoxPen.Platform.Windows.Recognition;
 using VoxPen.Platform.Windows.Text;
 
@@ -40,7 +42,7 @@ public sealed class AppHost : IDisposable
     private readonly string _configPath;
     private readonly WindowsGlobalHotkey _hotkey;
     private readonly WindowsAudioCapture _capture;
-    private readonly ParaformerEngine _asr;
+    private readonly IAsrEngine _asr;
     private readonly WindowsTextOutput _output;
     private readonly WindowsForegroundApp _foreground;
     private readonly AudioArchive _archive;
@@ -65,13 +67,48 @@ public sealed class AppHost : IDisposable
     /// <summary>保存快捷键设置；全局监听器将在应用重启后使用新配置。</summary>
     public void SaveShortcut(string key) => ShortcutSettings.Save(_configPath, Config, key);
 
-    public ModelDirectoryValidation ValidateModelDirectory(string modelDir)
+    public ModelDirectoryValidation ValidateModelDirectory(AsrEngineKind kind)
     {
-        var resolved = ModelDirectoryResolver.Resolve(_appBaseDir, modelDir);
-        return ModelDirectoryValidator.Validate(resolved);
+        var definition = AsrModelCatalog.Get(kind);
+        var resolved = ModelDirectoryResolver.Resolve(_appBaseDir, definition.DefaultModelDir);
+        return AsrModelValidator.Validate(definition, resolved);
     }
 
     public bool IsModelLoaded => _asr.IsLoaded;
+    public IReadOnlyList<AsrModelDefinition> AsrModels => AsrModelCatalog.All;
+
+    public Task<string> DownloadModelAsync(AsrEngineKind kind, IProgress<ModelDownloadProgress>? progress,
+        CancellationToken cancellationToken = default)
+    {
+        var coordinator = new ModelInstallCoordinator(
+            new HttpRangeModelPackageDownloader(), new CompressedModelPackageInstaller());
+        return coordinator.InstallAsync(AsrModelCatalog.Get(kind), _appBaseDir, progress, cancellationToken);
+    }
+
+    public void SaveAsrModel(AsrEngineKind kind)
+    {
+        var oldKind = Config.Asr.Engine;
+        var oldDir = Config.Asr.ModelDir;
+        var tempPath = $"{_configPath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            var definition = AsrModelCatalog.Get(kind);
+            Config.Asr.Engine = kind;
+            Config.Asr.ModelDir = ModelDirectoryResolver.Resolve(_appBaseDir, definition.DefaultModelDir);
+            File.WriteAllText(tempPath, JsonSerializer.Serialize(Config, SerializerOptions));
+            File.Move(tempPath, _configPath, overwrite: true);
+        }
+        catch
+        {
+            Config.Asr.Engine = oldKind;
+            Config.Asr.ModelDir = oldDir;
+            throw;
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
+    }
 
     /// <summary>
     /// 向用户弹一条"模型缺失"的 Toast 提醒。失败会静默降级到日志。
@@ -91,83 +128,14 @@ public sealed class AppHost : IDisposable
         }
     }
 
-    public bool IsModelLoadedFor(string modelDir)
+    public bool IsModelLoadedFor(AsrEngineKind kind)
     {
-        var resolved = ModelDirectoryResolver.Resolve(_appBaseDir, modelDir);
-        return _asr.IsLoaded
+        var definition = AsrModelCatalog.Get(kind);
+        var resolved = ModelDirectoryResolver.Resolve(_appBaseDir, definition.DefaultModelDir);
+        return Config.Asr.Engine == kind
+            && _asr.IsLoaded
             && string.Equals(Path.GetFullPath(resolved), Path.GetFullPath(Config.Asr.ModelDir),
                 StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>保存模型目录；当前已加载的识别器将在应用重启后切换。</summary>
-    public void SaveModelDirectory(string modelDir)
-    {
-        if (string.IsNullOrWhiteSpace(modelDir))
-            throw new ArgumentException("模型目录不能为空", nameof(modelDir));
-
-        var oldModelDir = Config.Asr.ModelDir;
-        var tempPath = $"{_configPath}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            Config.Asr.ModelDir = modelDir.Trim();
-            var json = JsonSerializer.Serialize(Config, SerializerOptions);
-            File.WriteAllText(tempPath, json);
-            File.Move(tempPath, _configPath, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(tempPath)) File.Delete(tempPath);
-            Config.Asr.ModelDir = oldModelDir;
-        }
-    }
-
-    /// <summary>校验标点模型目录（存在性 + <c>model.onnx</c>）。UI"状态灯"面板消费。</summary>
-    public ModelDirectoryValidation ValidatePunctuationDirectory(string modelDir)
-    {
-        var resolved = ModelDirectoryResolver.Resolve(_appBaseDir, modelDir);
-        return PunctuationModelValidator.Validate(resolved);
-    }
-
-    /// <summary>
-    /// 判定"用户在 UI 里填的这个目录 == 当前实际加载的标点模型目录"。
-    /// NullPunctuator（未启用标点或引擎自带）视为未加载。
-    /// </summary>
-    public bool IsPunctuationLoadedFor(string modelDir)
-    {
-        if (_punctuator is not SherpaPunctuator sherpa) return false;
-        if (!sherpa.IsLoaded) return false;
-
-        var resolvedTarget = ModelDirectoryResolver.Resolve(_appBaseDir, modelDir);
-        // Config.Punctuation.ModelDir 在 Create 里已被 Resolver 展平为绝对路径。
-        return string.Equals(
-            Path.GetFullPath(resolvedTarget),
-            Path.GetFullPath(Config.Punctuation.ModelDir),
-            StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// 保存标点模型目录；序列化整份 <see cref="AppConfig"/>，顺带把老 config.json
-    /// 缺失的 <c>punctuation</c> 段补写回磁盘。切换到新模型需要重启应用。
-    /// </summary>
-    public void SavePunctuationDirectory(string modelDir)
-    {
-        if (string.IsNullOrWhiteSpace(modelDir))
-            throw new ArgumentException("标点模型目录不能为空", nameof(modelDir));
-
-        var oldModelDir = Config.Punctuation.ModelDir;
-        var tempPath = $"{_configPath}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            Config.Punctuation.ModelDir = modelDir.Trim();
-            var json = JsonSerializer.Serialize(Config, SerializerOptions);
-            File.WriteAllText(tempPath, json);
-            File.Move(tempPath, _configPath, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(tempPath)) File.Delete(tempPath);
-            Config.Punctuation.ModelDir = oldModelDir;
-        }
     }
 
     private AppHost(string appBaseDir,
@@ -176,7 +144,7 @@ public sealed class AppHost : IDisposable
                     WindowsGlobalHotkey hotkey,
                     IReadOnlyList<string> hotkeyNames,
                     WindowsAudioCapture capture,
-                    ParaformerEngine asr,
+                    IAsrEngine asr,
                     WindowsTextOutput output,
                     WindowsForegroundApp foreground,
                     AudioArchive archive,
@@ -211,6 +179,9 @@ public sealed class AppHost : IDisposable
         var configPath = Path.Combine(appBaseDir, "config.json");
         var config = LoadOrCreateConfig(configPath);
 
+        // 模型目录由程序约定；旧 config.json 的 modelDir 仅为反序列化兼容而保留。
+        ModelDirectoryConvention.Apply(config);
+
         // 发布目录优先；开发运行时允许从仓库根目录找到 models/。
         config.Asr.ModelDir = ModelDirectoryResolver.Resolve(appBaseDir, config.Asr.ModelDir);
         config.Punctuation.ModelDir =
@@ -223,7 +194,7 @@ public sealed class AppHost : IDisposable
 
         var hotkey = new WindowsGlobalHotkey(keyNames, config.Shortcut.Suppress);
         var capture = new WindowsAudioCapture(config.Audio.InputDevice);
-        var asr = new ParaformerEngine(config.Asr);
+        var asr = WindowsAsrEngineFactory.Create(config.Asr);
         var output = new WindowsTextOutput();
         var foreground = new WindowsForegroundApp();
         var archive = new AudioArchive(
