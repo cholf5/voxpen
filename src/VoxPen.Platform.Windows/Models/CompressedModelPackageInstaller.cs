@@ -9,7 +9,7 @@ namespace VoxPen.Platform.Windows.Models;
 /// <summary>安全解压 ZIP 或 tar.bz2，并且只在模型文件完整后安装。</summary>
 public sealed class CompressedModelPackageInstaller : IModelPackageInstaller
 {
-    public Task<string> InstallAsync(AsrModelDefinition model, string packagePath, string appBaseDir,
+    public Task<string> InstallAsync(IModelPackageDefinition model, string packagePath, string appBaseDir,
         CancellationToken cancellationToken = default) => Task.Run(() =>
     {
         var modelsRoot = Path.Combine(appBaseDir, "models");
@@ -37,7 +37,7 @@ public sealed class CompressedModelPackageInstaller : IModelPackageInstaller
 
             var sourceDirectory = Directory.EnumerateDirectories(temporaryDirectory, "*", SearchOption.AllDirectories)
                 .Append(temporaryDirectory)
-                .FirstOrDefault(directory => AsrModelValidator.Validate(model, directory).IsValid)
+                .FirstOrDefault(directory => HasRequiredFiles(model, directory))
                 ?? throw new InvalidDataException("模型包解压后缺少必需文件");
             var targetDirectory = Path.Combine(appBaseDir, model.DefaultModelDir);
             if (Directory.Exists(targetDirectory))
@@ -52,4 +52,7 @@ public sealed class CompressedModelPackageInstaller : IModelPackageInstaller
             if (Directory.Exists(temporaryDirectory)) Directory.Delete(temporaryDirectory, recursive: true);
         }
     }, cancellationToken);
+
+    private static bool HasRequiredFiles(IModelPackageDefinition model, string directory) =>
+        model.RequiredFiles.All(relativePath => File.Exists(Path.Combine(directory, relativePath)));
 }

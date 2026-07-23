@@ -4,6 +4,6 @@ namespace VoxPen.Core.Models;
 
 public interface IModelPackageDownloader
 {
-    Task<string> DownloadAsync(AsrModelDefinition model, string partialPath,
+    Task<string> DownloadAsync(IModelPackageDefinition model, string partialPath,
         IProgress<ModelDownloadProgress>? progress, CancellationToken cancellationToken = default);
 }

@@ -28,9 +28,24 @@ public sealed class ModelInstallCoordinatorTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public async Task Install_accepts_the_punctuation_model_package()
+    {
+        var coordinator = new ModelInstallCoordinator(new FakeDownloader(), new FakeInstaller());
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var installed = await coordinator.InstallAsync(PunctuationModelDefinition.Default, root);
+
+            installed.Should().Be(Path.Combine(root, PunctuationModelDefinition.Default.DefaultModelDir));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     private sealed class FakeDownloader : IModelPackageDownloader
     {
-        public Task<string> DownloadAsync(AsrModelDefinition model, string partialPath,
+        public Task<string> DownloadAsync(IModelPackageDefinition model, string partialPath,
             IProgress<ModelDownloadProgress>? progress, CancellationToken cancellationToken)
         {
             File.WriteAllText(partialPath, "package");
@@ -41,7 +56,7 @@ public sealed class ModelInstallCoordinatorTests
 
     private sealed class FakeInstaller : IModelPackageInstaller
     {
-        public Task<string> InstallAsync(AsrModelDefinition model, string packagePath, string appBaseDir,
+        public Task<string> InstallAsync(IModelPackageDefinition model, string packagePath, string appBaseDir,
             CancellationToken cancellationToken) => Task.FromResult(Path.Combine(appBaseDir, model.DefaultModelDir));
     }
 }

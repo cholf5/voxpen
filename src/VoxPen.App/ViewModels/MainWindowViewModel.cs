@@ -30,6 +30,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly StringBuilder _log = new();
     private CancellationTokenSource? _modelCheckCancellation;
     private CancellationTokenSource? _modelDownloadCancellation;
+    private CancellationTokenSource? _punctuationDownloadCancellation;
 
     [ObservableProperty] private string _stateLabel = "就绪";
     [ObservableProperty] private IBrush _stateBrush = Brushes.Gray;
@@ -40,6 +41,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private double _modelDownloadPercent;
     [ObservableProperty] private string _modelDownloadStatus = "";
     [ObservableProperty] private bool _isModelDownloading;
+    [ObservableProperty] private string _punctuationModelStatusIcon = "…";
+    [ObservableProperty] private string _punctuationModelStatusText = "正在检测标点模型…";
+    [ObservableProperty] private double _punctuationDownloadPercent;
+    [ObservableProperty] private string _punctuationDownloadStatus = "";
+    [ObservableProperty] private bool _isPunctuationModelDownloading;
     [ObservableProperty] private string _outputModeLabel = "模拟打字";
     [ObservableProperty] private string _pasteAppsLabel = "";
     [ObservableProperty] private string _logText = "";
@@ -74,8 +80,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         AttachHost(host);
     }
 
-    public bool CanEditSettings => !IsSavingSettings && !IsModelDownloading && !IsRecordingShortcut;
+    public bool CanEditSettings => !IsSavingSettings && !IsModelDownloading && !IsPunctuationModelDownloading && !IsRecordingShortcut;
     public bool CanSaveSettings => CanEditSettings && SelectedAsrModel is not null;
+    public bool ShouldShowPunctuationDownload => SelectedAsrModel is not null &&
+        (SelectedAsrModel.Capabilities & EngineCapabilities.Punctuation) == 0;
 
     public void ReplaceHost(AppHost host) => AttachHost(host);
 
@@ -85,6 +93,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _config = host.Config;
         SelectedAsrModel = AsrModelCatalog.Get(_config.Asr.Engine);
         RefreshConfigLabels();
+        _ = DetectPunctuationModelAsync();
 
         host.Pipeline.StateChanged += (_, s) => Dispatcher.UIThread.Post(() => ApplyState(s));
         host.Pipeline.TextRecognized += (_, text) => Dispatcher.UIThread.Post(() => AppendHistory(text));
@@ -109,8 +118,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
     partial void OnSelectedAsrModelChanged(AsrModelDefinition? value)
     {
         OnPropertyChanged(nameof(CanSaveSettings));
+        OnPropertyChanged(nameof(ShouldShowPunctuationDownload));
         if (value is null) return;
         _ = DetectModelAsync(value);
+        _ = DetectPunctuationModelAsync();
     }
 
     partial void OnIsSavingSettingsChanged(bool value)
@@ -120,6 +131,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     partial void OnIsModelDownloadingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanEditSettings));
+        OnPropertyChanged(nameof(CanSaveSettings));
+    }
+
+    partial void OnIsPunctuationModelDownloadingChanged(bool value)
     {
         OnPropertyChanged(nameof(CanEditSettings));
         OnPropertyChanged(nameof(CanSaveSettings));
@@ -158,6 +175,25 @@ public sealed partial class MainWindowViewModel : ObservableObject
             ModelStatusIcon = "❌";
             ModelStatusText = $"检测失败：{ex.Message}";
         }
+    }
+
+    private Task DetectPunctuationModelAsync()
+    {
+        if (!ShouldShowPunctuationDownload)
+        {
+            PunctuationModelStatusIcon = "✅";
+            PunctuationModelStatusText = "此模型自带标点";
+            return Task.CompletedTask;
+        }
+
+        var result = _host is null
+            ? PunctuationModelValidator.Validate(ModelDirectoryConvention.PunctuationModelDirectory)
+            : _host.ValidatePunctuationModelDirectory();
+        PunctuationModelStatusIcon = result.IsValid ? "✅" : "⚪";
+        PunctuationModelStatusText = result.IsValid
+            ? "标点模型文件完整，保存后立即应用"
+            : "未安装，将输出无标点";
+        return Task.CompletedTask;
     }
 
     private void ApplyState(PipelineState state)
@@ -228,6 +264,39 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     [RelayCommand]
     private void CancelModelDownload() => _modelDownloadCancellation?.Cancel();
+
+    [RelayCommand]
+    private async Task DownloadPunctuationModelAsync()
+    {
+        if (_host is null || !ShouldShowPunctuationDownload || IsPunctuationModelDownloading || IsSavingSettings) return;
+        _punctuationDownloadCancellation = new CancellationTokenSource();
+        IsPunctuationModelDownloading = true;
+        PunctuationDownloadStatus = "准备下载标点模型…";
+        try
+        {
+            var progress = new Progress<ModelDownloadProgress>(value =>
+            {
+                PunctuationDownloadPercent = value.Percent ?? 0;
+                PunctuationDownloadStatus = value.State == ModelDownloadState.Downloading
+                    ? $"下载中 {value.Percent:0.0}%  {value.BytesPerSecond / 1024d / 1024d:0.0} MB/s"
+                    : value.Message ?? value.State.ToString();
+            });
+            await _host.DownloadPunctuationModelAsync(progress, _punctuationDownloadCancellation.Token);
+            await DetectPunctuationModelAsync();
+            PunctuationDownloadStatus = "标点模型已安装，点击“保存并应用”立即生效";
+        }
+        catch (OperationCanceledException) { PunctuationDownloadStatus = "下载已取消，可稍后继续"; }
+        catch (Exception ex) { PunctuationDownloadStatus = $"下载失败：{ex.Message}"; }
+        finally
+        {
+            IsPunctuationModelDownloading = false;
+            _punctuationDownloadCancellation?.Dispose();
+            _punctuationDownloadCancellation = null;
+        }
+    }
+
+    [RelayCommand]
+    private void CancelPunctuationDownload() => _punctuationDownloadCancellation?.Cancel();
 
     [RelayCommand]
     private async Task CopyLatestAsync()

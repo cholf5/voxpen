@@ -10,9 +10,9 @@ namespace VoxPen.Core.Config;
 /// </summary>
 public static class PunctuationModelDownloadInfo
 {
-    /// <summary>官方 Release 页面。</summary>
+    /// <summary>官方模型包直链。</summary>
     public const string DownloadUrl =
-        "https://github.com/k2-fsa/sherpa-onnx/releases/tag/punctuation-models";
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/" + PackageName;
 
     /// <summary>Release 页面上的资产名，方便用户在页面里定位。</summary>
     public const string PackageName =

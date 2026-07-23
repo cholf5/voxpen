@@ -12,4 +12,4 @@ public sealed record AsrModelDefinition(
     string PackageName,
     Uri DownloadUrl,
     long PackageSizeBytes,
-    string Description);
+    string Description) : IModelPackageDefinition;

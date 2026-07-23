@@ -14,7 +14,7 @@ public sealed class ModelInstallCoordinator
         _installer = installer ?? throw new ArgumentNullException(nameof(installer));
     }
 
-    public async Task<string> InstallAsync(AsrModelDefinition model, string appBaseDir,
+    public async Task<string> InstallAsync(IModelPackageDefinition model, string appBaseDir,
         IProgress<ModelDownloadProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(model);

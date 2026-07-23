@@ -4,6 +4,6 @@ namespace VoxPen.Core.Models;
 
 public interface IModelPackageInstaller
 {
-    Task<string> InstallAsync(AsrModelDefinition model, string packagePath, string appBaseDir,
+    Task<string> InstallAsync(IModelPackageDefinition model, string packagePath, string appBaseDir,
         CancellationToken cancellationToken = default);
 }

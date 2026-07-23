@@ -115,6 +115,18 @@ public sealed class AppHost : IDisposable
         return coordinator.InstallAsync(AsrModelCatalog.Get(kind), _appBaseDir, progress, cancellationToken);
     }
 
+    /// <summary>下载可选的 CT-Transformer 外挂标点模型，不会隐式切换当前宿主。</summary>
+    public Task<string> DownloadPunctuationModelAsync(IProgress<ModelDownloadProgress>? progress,
+        CancellationToken cancellationToken = default)
+    {
+        var coordinator = new ModelInstallCoordinator(
+            new HttpRangeModelPackageDownloader(), new CompressedModelPackageInstaller());
+        return coordinator.InstallAsync(PunctuationModelDefinition.Default, _appBaseDir, progress, cancellationToken);
+    }
+
+    public ModelDirectoryValidation ValidatePunctuationModelDirectory() =>
+        PunctuationModelValidator.Validate(Config.Punctuation.ModelDir);
+
     /// <summary>录制快捷键时暂停听写，但继续运行全局 hook 以捕获用户实际按下的组合。</summary>
     public void BeginShortcutRecording()
     {

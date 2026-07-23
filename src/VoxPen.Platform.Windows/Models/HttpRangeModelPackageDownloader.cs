@@ -16,7 +16,7 @@ public sealed class HttpRangeModelPackageDownloader : IModelPackageDownloader
         _httpClient = httpClient ?? new HttpClient();
     }
 
-    public async Task<string> DownloadAsync(AsrModelDefinition model, string partialPath,
+    public async Task<string> DownloadAsync(IModelPackageDefinition model, string partialPath,
         IProgress<ModelDownloadProgress>? progress, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(model);

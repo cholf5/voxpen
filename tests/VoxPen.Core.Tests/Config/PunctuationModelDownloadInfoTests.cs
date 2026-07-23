@@ -6,11 +6,24 @@ namespace VoxPen.Core.Tests.Config;
 public sealed class PunctuationModelDownloadInfoTests
 {
     [Fact]
-    public void DownloadUrlIsSherpaOnnxPunctuationTag()
+    public void Definition_describes_the_installable_punctuation_package()
+    {
+        var definition = PunctuationModelDefinition.Default;
+
+        Assert.Equal("models/Punct-CT-Transformer/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12",
+            definition.DefaultModelDir);
+        Assert.Contains("model.onnx", definition.RequiredFiles);
+        Assert.Equal(PunctuationModelDownloadInfo.PackageName, definition.PackageName);
+        Assert.Equal(PunctuationModelDownloadInfo.DownloadUrl, definition.DownloadUrl.ToString());
+    }
+
+    [Fact]
+    public void DownloadUrlIsSherpaOnnxPunctuationAsset()
     {
         // 下载源必须指向上游 sherpa-onnx 的标点模型 tag；换 URL 得改 README，别偷偷改。
         Assert.StartsWith("https://github.com/k2-fsa/sherpa-onnx", PunctuationModelDownloadInfo.DownloadUrl);
         Assert.Contains("punctuation-models", PunctuationModelDownloadInfo.DownloadUrl);
+        Assert.Contains("/releases/download/", PunctuationModelDownloadInfo.DownloadUrl);
     }
 
     [Fact]
