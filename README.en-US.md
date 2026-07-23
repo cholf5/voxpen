@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎙️ VoxPen · 声写
+# VoxPen · 声写
 
 **An offline Chinese voice-to-text input helper — hold <kbd>CapsLock</kbd>, speak, release.**
 
@@ -9,10 +9,10 @@ A modern C# / .NET 8 / Avalonia rewrite of
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Platform: Windows 10/11 x64](https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-quick-start-prebuilt)
+[![Platform: Windows 10/11 x64](https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#quick-start-prebuilt)
 [![UI: Avalonia 12](https://img.shields.io/badge/UI-Avalonia%2012-8B44AC)](https://avaloniaui.net/)
 [![ASR: sherpa-onnx](https://img.shields.io/badge/ASR-Paraformer%20%2F%20sherpa--onnx-orange)](https://github.com/k2-fsa/sherpa-onnx)
-[![Tests: 122 ✓](https://img.shields.io/badge/xUnit-122%20green-brightgreen)](tests/VoxPen.Core.Tests)
+[![Tests: 122](https://img.shields.io/badge/xUnit-122%20green-brightgreen)](tests/VoxPen.Core.Tests)
 
 **[← 简体中文说明](README.md)**
 
@@ -20,45 +20,39 @@ A modern C# / .NET 8 / Avalonia rewrite of
 
 ---
 
-## ✨ Highlights
+## Highlights
 
-- 🧩 **One process, one tray icon.** No more "client + server + two black terminal windows" — everything lives in a single Avalonia app that quietly waits in the system tray.
-- ⌨️ **Push-to-talk on <kbd>CapsLock</kbd>.** Hold to record, release to transcribe and type the result into whatever window has focus.
-- 🔡 **Short press keeps its native meaning.** A tap shorter than 0.3 s still toggles CapsLock (VoxPen re-emits the key for you).
-- 🔁 **100% `hot-rule.txt` compatible.** Regex/literal replacements with `\1..\n` backreferences behave exactly like the upstream Python project — bring your existing files.
-- 🧠 **Four offline ASR engines.** Choose Paraformer, SenseVoice-Small, Fun-ASR-Nano, or Qwen3-ASR from Settings; download compatible models in-app with live progress and resume.
-- 🧠 **Phoneme RAG hot-words.** `hot.txt` is loaded through a Chinese pinyin phoneme index for fuzzy correction that survives common ASR mishears.
-- 📂 **Offline batch transcription.** Turn `.mp3 / .m4a / .wav / .flac / .mp4 / .opus / …` into `.txt / .srt / .json / .merge.txt` from the CLI.
-- 📓 **Optional Markdown diary.** Every utterance is archived with its WAV under `recordings/YYYY/MM/DD.md`, one Typora regex away from an inline `<audio controls>` player.
-- 🔥 **Hot reload.** Edits to `config.json`, `hot-rule.txt`, and `hot.txt` apply in ~3 s without restarting.
-- 📦 **Single-file exe.** `dotnet publish` produces one self-contained `~100 MB` executable; models use fixed directories under `models/`.
+- **One process, one tray icon.** No more "client + server + two black terminal windows" — everything lives in a single Avalonia app that quietly waits in the system tray.
+- **Push-to-talk on <kbd>CapsLock</kbd>.** Hold to record, release to transcribe and type the result into whatever window has focus.
+- **Short press keeps its native meaning.** A tap shorter than 0.3 s still toggles CapsLock (VoxPen re-emits the key for you).
+- **100% `hot-rule.txt` compatible.** Regex/literal replacements with `\1..\n` backreferences behave exactly like the upstream Python project — bring your existing files.
+- **Four offline ASR engines.** Choose Paraformer, SenseVoice-Small, Fun-ASR-Nano, or Qwen3-ASR from Settings; download compatible models in-app with live progress and resume.
+- **Phoneme RAG hot-words.** `hot.txt` is loaded through a Chinese pinyin phoneme index for fuzzy correction that survives common ASR mishears.
+- **Offline batch transcription.** Turn `.mp3 / .m4a / .wav / .flac / .mp4 / .opus / …` into `.txt / .srt / .json / .merge.txt` from the CLI.
+- **Optional Markdown diary.** Every utterance is archived with its WAV under `recordings/YYYY/MM/DD.md`, one Typora regex away from an inline `<audio controls>` player.
+- **Hot reload.** Edits to `config.json`, `hot-rule.txt`, and `hot.txt` apply in ~3 s without restarting.
+- **Single-file exe.** `dotnet publish` produces one self-contained `~100 MB` executable; models use fixed directories under `models/`.
 
 > **Status:** Windows 10/11 x64 · v2 P7 shipped (P1–P7 complete). macOS / Linux abstractions are already in `VoxPen.Core`; concrete implementations are the next milestone.
 
 ---
 
-## 📸 Overview
+## Overview
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Global hotkey (CapsLock / mouse X-button / F13..F16)  │
-│                        │                                │
-│                        ▼                                │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  │
-│  │ PortAudio   │─▶│  Paraformer  │─▶│  hot-rule +   │  │
-│  │ 16 kHz mono │  │  sherpa-onnx │  │  hot.txt RAG  │  │
-│  └─────────────┘  └──────────────┘  └───────┬───────┘  │
-│                                              ▼          │
-│                                    ┌─────────────────┐  │
-│                                    │  SendInput to   │  │
-│                                    │  focused window │  │
-│                                    └─────────────────┘  │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    HK["Global hotkey<br/>CapsLock / mouse X-button / F13..F16"]
+    AU["PortAudio<br/>16 kHz mono"]
+    ASR["Paraformer<br/>sherpa-onnx"]
+    PP["hot-rule + hot.txt RAG"]
+    OUT["SendInput to focused window"]
+
+    HK --> AU --> ASR --> PP --> OUT
 ```
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 | Phase | Scope | Status |
 | ----- | ----- | :----: |
@@ -75,7 +69,7 @@ A modern C# / .NET 8 / Avalonia rewrite of
 
 ---
 
-## 🚀 Quick start (prebuilt)
+## Quick start (prebuilt)
 
 1. **Download the latest release** — grab `VoxPen-win-x64.zip` from the [Releases](../../releases) page and extract it anywhere, e.g. `D:\Apps\VoxPen\`.
 2. **Fetch a Paraformer model** (~229 MB). Recommended: the pre-packaged `Paraformer.zip` from [HaujetZhao/CapsWriter-Offline releases · models](https://github.com/HaujetZhao/CapsWriter-Offline/releases/tag/models) (mirrors on Chinese cloud drives, SHA-256 `a12a3f97...`). Upstream `sherpa-onnx-paraformer-zh-2023-09-14` from [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases) works too.
@@ -103,7 +97,7 @@ A modern C# / .NET 8 / Avalonia rewrite of
 
 ---
 
-## 🖱️ Usage
+## Usage
 
 ### Hotkeys
 
@@ -217,7 +211,7 @@ Set it to `false` to disable.
 
 ---
 
-## 🧪 P7 features
+## P7 features
 
 ### Batch transcription (offline subtitles)
 
@@ -276,7 +270,7 @@ Covers SequenceMatcher, SmartSplit, SegmentMerger, SubtitleAligner, SrtWriter, T
 
 ---
 
-## 🛠️ Building from source
+## Building from source
 
 Prerequisite: [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
 
@@ -329,7 +323,7 @@ dotnet run --project src/VoxPen.Cli -- run
 
 ---
 
-## 🧱 Project structure
+## Project structure
 
 ```
 VoxPen/
@@ -357,7 +351,7 @@ VoxPen/
 
 ---
 
-## ⚠️ Permissions & caveats
+## Permissions & caveats
 
 - **Microphone.** Windows prompts on first launch.
 - **SmartScreen.** The release exe is not code-signed; SmartScreen will warn on first run. Click **More info → Run anyway**; the warning won't re-appear.
@@ -366,7 +360,7 @@ VoxPen/
 
 ---
 
-## 🧠 Developer notes
+## Developer notes
 
 ### Filesystem trap: don't junction `publish/models` → `models/`
 
@@ -389,7 +383,7 @@ See `publish/verify-p7/` for a one-shot boot-and-shutdown example.
 
 ---
 
-## 🙏 Credits
+## Credits
 
 - **[HaujetZhao/CapsWriter-Offline](https://github.com/HaujetZhao/CapsWriter-Offline)** — original project, UX design, config conventions.
 - **[k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)** — ASR engine + PortAudioSharp2.
@@ -399,6 +393,6 @@ See `publish/verify-p7/` for a one-shot boot-and-shutdown example.
 
 ---
 
-## 📄 License
+## License
 
 [MIT](LICENSE), matching the upstream project.
