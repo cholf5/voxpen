@@ -64,8 +64,35 @@ public sealed class AppHost : IDisposable
     /// <summary>轻量日志通道：UI 订阅后填到"日志"面板。</summary>
     public event EventHandler<string>? LogEmitted;
 
-    /// <summary>保存快捷键设置；全局监听器将在应用重启后使用新配置。</summary>
-    public void SaveShortcut(string key) => ShortcutSettings.Save(_configPath, Config, key);
+    /// <summary>保存设置页选择；由 App 在预加载成功后切换到新宿主。</summary>
+    public void SaveSettings(string shortcutKey, AsrEngineKind asrEngine)
+    {
+        var oldKey = Config.Shortcut.Key;
+        var oldKeys = Config.Shortcut.Keys;
+        var oldEngine = Config.Asr.Engine;
+        var oldModelDir = Config.Asr.ModelDir;
+        var tempPath = $"{_configPath}.{Guid.NewGuid():N}.tmp";
+
+        try
+        {
+            SettingsSelection.Apply(Config, shortcutKey, asrEngine);
+            Config.Asr.ModelDir = ModelDirectoryResolver.Resolve(_appBaseDir, Config.Asr.ModelDir);
+            File.WriteAllText(tempPath, JsonSerializer.Serialize(Config, SerializerOptions));
+            File.Move(tempPath, _configPath, overwrite: true);
+        }
+        catch
+        {
+            Config.Shortcut.Key = oldKey;
+            Config.Shortcut.Keys = oldKeys;
+            Config.Asr.Engine = oldEngine;
+            Config.Asr.ModelDir = oldModelDir;
+            throw;
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
+    }
 
     public ModelDirectoryValidation ValidateModelDirectory(AsrEngineKind kind)
     {
@@ -83,31 +110,6 @@ public sealed class AppHost : IDisposable
         var coordinator = new ModelInstallCoordinator(
             new HttpRangeModelPackageDownloader(), new CompressedModelPackageInstaller());
         return coordinator.InstallAsync(AsrModelCatalog.Get(kind), _appBaseDir, progress, cancellationToken);
-    }
-
-    public void SaveAsrModel(AsrEngineKind kind)
-    {
-        var oldKind = Config.Asr.Engine;
-        var oldDir = Config.Asr.ModelDir;
-        var tempPath = $"{_configPath}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            var definition = AsrModelCatalog.Get(kind);
-            Config.Asr.Engine = kind;
-            Config.Asr.ModelDir = ModelDirectoryResolver.Resolve(_appBaseDir, definition.DefaultModelDir);
-            File.WriteAllText(tempPath, JsonSerializer.Serialize(Config, SerializerOptions));
-            File.Move(tempPath, _configPath, overwrite: true);
-        }
-        catch
-        {
-            Config.Asr.Engine = oldKind;
-            Config.Asr.ModelDir = oldDir;
-            throw;
-        }
-        finally
-        {
-            if (File.Exists(tempPath)) File.Delete(tempPath);
-        }
     }
 
     /// <summary>
@@ -251,13 +253,11 @@ public sealed class AppHost : IDisposable
         // 首次加载 hot-rule.txt / hot.txt，启动监视
         host.ReloadHotRule();
         host.ReloadHotwords();
-        host.SetupWatchers();
-
         return host;
     }
 
-    /// <summary>加载模型 + 启动全局钩子。加载失败会抛出。</summary>
-    public async Task LoadAndStartAsync()
+    /// <summary>加载 ASR 与标点模型，但不启动全局快捷键监听。</summary>
+    public async Task LoadModelsAsync()
     {
         Emit($"hot-rule.txt: {_hotRule.RuleCount} 条规则已就绪");
         if (_phonemeCorrector is not null)
@@ -293,8 +293,21 @@ public sealed class AppHost : IDisposable
             Emit("标点补全未启用（未找到 model.onnx 或 ASR 已自带标点）");
         }
 
+    }
+
+    /// <summary>启动全局快捷键监听。必须在 <see cref="LoadModelsAsync"/> 成功后调用。</summary>
+    public void StartListening()
+    {
+        SetupWatchers();
         Pipeline.Start();
         Emit($"已监听快捷键：[{string.Join(", ", _hotkeyNames)}] (suppress={Config.Shortcut.Suppress})");
+    }
+
+    /// <summary>加载模型并启动全局快捷键监听。</summary>
+    public async Task LoadAndStartAsync()
+    {
+        await LoadModelsAsync().ConfigureAwait(false);
+        StartListening();
     }
 
     public void Emit(string message) => LogEmitted?.Invoke(this, message);
@@ -493,7 +506,7 @@ public sealed class AppHost : IDisposable
                 Config.Postprocess.TrashPuncThreshold,
                 Config.Postprocess.TrashPuncApps);
 
-            Emit("已热重载 config.json（快捷键/模型/日记根目录改动需重启生效）");
+            Emit("已热重载 config.json（设置页的快捷键/模型通过“保存并应用”立即切换；手动编辑这两项仍需重启）");
         }
         catch (Exception ex)
         {

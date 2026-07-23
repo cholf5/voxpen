@@ -72,6 +72,7 @@
                         <TextBlock Text="快捷键" FontWeight="SemiBold" />
                         <ComboBox ItemsSource="{Binding ShortcutOptions}"
                                   SelectedItem="{Binding SelectedShortcut}"
+                                  IsEnabled="{Binding CanEditSettings}"
                                   HorizontalAlignment="Left"
                                   MinWidth="220">
                             <ComboBox.ItemTemplate>
@@ -80,16 +81,10 @@
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <Button Content="保存快捷键"
-                                Command="{Binding SaveShortcutCommand}"
-                                HorizontalAlignment="Left" />
-                        <TextBlock Text="{Binding ShortcutSaveStatus}"
-                                   Opacity="0.75"
-                                   TextWrapping="Wrap" />
-
                         <TextBlock Text="识别模型" FontWeight="SemiBold" Margin="0,8,0,0" />
                         <ComboBox ItemsSource="{Binding AsrModels}"
                                   SelectedItem="{Binding SelectedAsrModel}"
+                                  IsEnabled="{Binding CanEditSettings}"
                                   HorizontalAlignment="Left" MinWidth="260">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate>
@@ -102,7 +97,8 @@
                         </ComboBox>
                         <TextBlock Text="{Binding SelectedAsrModel.Description}" Opacity="0.75" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="下载模型" Command="{Binding DownloadSelectedModelCommand}" />
+                            <Button Content="下载模型" Command="{Binding DownloadSelectedModelCommand}"
+                                    IsEnabled="{Binding CanEditSettings}" />
                             <Button Content="取消下载" Command="{Binding CancelModelDownloadCommand}"
                                     IsEnabled="{Binding IsModelDownloading}" />
                         </StackPanel>
@@ -121,7 +117,14 @@
                         <TextBlock Text="{Binding PasteAppsLabel}" Opacity="0.75" TextWrapping="Wrap" />
 
                         <Border Height="1" Background="{DynamicResource SystemBaseLowColor}" Margin="0,12,0,12" />
-                        <TextBlock Text="快捷键保存后需要重启应用；其他高级配置仍可手工编辑 config.json。"
+                        <Button Content="保存并应用"
+                                Command="{Binding SaveSettingsCommand}"
+                                IsEnabled="{Binding CanSaveSettings}"
+                                HorizontalAlignment="Left" />
+                        <TextBlock Text="{Binding SettingsSaveStatus}"
+                                   Opacity="0.75"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Text="保存后立即应用快捷键和模型；其他高级配置仍可手工编辑 config.json。"
                                    Opacity="0.55" TextWrapping="Wrap" />
                     </StackPanel>
                 </ScrollViewer>

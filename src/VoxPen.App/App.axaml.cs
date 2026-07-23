@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -22,6 +23,8 @@ public partial class App : Application
     private MainWindowViewModel? _viewModel;
     private RecordingOverlayWindow? _overlay;
     private RecordingOverlayViewModel? _overlayVm;
+    private string? _logFile;
+    private readonly SemaphoreSlim _settingsApplyGate = new(1, 1);
 
     public override void Initialize()
     {
@@ -36,17 +39,11 @@ public partial class App : Application
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             _host = AppHost.Create(AppContext.BaseDirectory);
-            _viewModel = new MainWindowViewModel(_host);
+            _viewModel = new MainWindowViewModel(_host, ApplySettingsAsync);
 
             // 可选文件日志：CAPSWRITER_LOG_FILE=path 时把 Emit 事件写入文件
-            var logFile = Environment.GetEnvironmentVariable("CAPSWRITER_LOG_FILE");
-            if (!string.IsNullOrEmpty(logFile))
-            {
-                _host.LogEmitted += (_, line) =>
-                {
-                    try { File.AppendAllText(logFile, $"[{DateTime.Now:HH:mm:ss}] {line}\n"); } catch { }
-                };
-            }
+            _logFile = Environment.GetEnvironmentVariable("CAPSWRITER_LOG_FILE");
+            AttachFileLogger(_host);
 
             _mainWindow = new MainWindow { DataContext = _viewModel };
             desktop.MainWindow = _mainWindow;
@@ -56,8 +53,7 @@ public partial class App : Application
             _overlayVm = new RecordingOverlayViewModel();
             _overlay = new RecordingOverlayWindow();
             _overlay.AttachViewModel(_overlayVm);
-            _host.Pipeline.StateChanged += (_, state) => Dispatcher.UIThread.Post(() => ApplyOverlayState(state));
-            _host.Pipeline.AudioLevelSampled += (_, level) => Dispatcher.UIThread.Post(() => _overlayVm?.Push(level));
+            AttachOverlayEvents(_host);
 
             // 首次启动隐藏窗口，只留托盘图标
             _mainWindow.Show();
@@ -126,6 +122,65 @@ public partial class App : Application
                 _mainWindow?.Activate();
             });
         }
+    }
+
+    private async Task ApplySettingsAsync(string shortcutKey, AsrEngineKind asrEngine)
+    {
+        await _settingsApplyGate.WaitAsync();
+        try
+        {
+            if (_host is null) throw new InvalidOperationException("应用尚未初始化。");
+
+            var previous = _host;
+            var previousShortcutKey = previous.Config.Shortcut.Key;
+            var previousAsrEngine = previous.Config.Asr.Engine;
+            previous.SaveSettings(shortcutKey, asrEngine);
+            var candidate = AppHost.Create(AppContext.BaseDirectory);
+            var previousDisposed = false;
+            try
+            {
+                await candidate.LoadModelsAsync();
+                previous.Dispose();
+                previousDisposed = true;
+                candidate.StartListening();
+                _host = candidate;
+                _viewModel?.ReplaceHost(candidate);
+                AttachFileLogger(candidate);
+                AttachOverlayEvents(candidate);
+            }
+            catch
+            {
+                candidate.Dispose();
+                if (previousDisposed)
+                {
+                    _host = null;
+                }
+                else
+                {
+                    previous.SaveSettings(previousShortcutKey, previousAsrEngine);
+                }
+                throw;
+            }
+        }
+        finally
+        {
+            _settingsApplyGate.Release();
+        }
+    }
+
+    private void AttachFileLogger(AppHost host)
+    {
+        if (string.IsNullOrEmpty(_logFile)) return;
+        host.LogEmitted += (_, line) =>
+        {
+            try { File.AppendAllText(_logFile, $"[{DateTime.Now:HH:mm:ss}] {line}\n"); } catch { }
+        };
+    }
+
+    private void AttachOverlayEvents(AppHost host)
+    {
+        host.Pipeline.StateChanged += (_, state) => Dispatcher.UIThread.Post(() => ApplyOverlayState(state));
+        host.Pipeline.AudioLevelSampled += (_, level) => Dispatcher.UIThread.Post(() => _overlayVm?.Push(level));
     }
 
     // ---------- TrayIcon 菜单事件 ----------

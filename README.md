@@ -123,7 +123,7 @@ A modern C# / .NET 8 / Avalonia rewrite of
 ### Main window
 
 - **History** — the last 50 transcripts, one-click copy the latest
-- **Settings** — choose/download a model, live download progress, model validity indicator, hotkey picker/save (model choice and hotkey changes require restart)
+- **Settings** — choose/download a model, live download progress, model validity indicator, hotkey picker, then use one **Save and apply** button to activate both choices immediately
 - **Log** — live stream of model load, hot-rule reloads, recognition errors, etc.
 
 > The window's close button minimizes to tray. Use the tray menu or the in-window "Exit" button to actually quit.
@@ -185,7 +185,7 @@ Auto-created on first launch next to the exe. Field names come from the upstream
 
 **Models:** Settings downloads official sherpa-onnx-compatible packages to fixed paths under `models/`, shows progress/speed, and resumes an interrupted download. The supported engine values are `Paraformer`, `SenseVoice`, `FunAsrNano`, and `QwenAsr`. Qwen3-ASR does not provide word timestamps. To reuse an existing model, copy its files into the matching fixed directory; model paths cannot be selected in the app or CLI.
 
-**Hot reload:** edits to `config.json` / `hot-rule.txt` / `hot.txt` are picked up within ~3 s. Hotkey, ASR model choice, and diary root still require a restart. Legacy `asr.modelDir` and `punctuation.modelDir` values are ignored.
+**Hot reload:** edits to `config.json` / `hot-rule.txt` / `hot.txt` are picked up within ~3 s. In Settings, saving a hotkey or ASR model selection applies it immediately; diary root changes still require a restart. Legacy `asr.modelDir` and `punctuation.modelDir` values are ignored.
 
 **Supported keys for `shortcut.keys`:** `caps_lock`, `f13`..`f16`, `x1`, `x2`, `mouse_left`, `mouse_right`, `mouse_middle`. Any non-empty combination triggers on either key.
 

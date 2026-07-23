@@ -23,8 +23,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private const int MaxHistory = 50;
     private const int MaxLogChars = 20_000;
 
-    private readonly AppHost? _host;
-    private readonly AppConfig _config;
+    private AppHost? _host;
+    private AppConfig _config = new();
+    private readonly Func<string, AsrEngineKind, Task>? _applySettingsAsync;
     private readonly StringBuilder _log = new();
     private CancellationTokenSource? _modelCheckCancellation;
     private CancellationTokenSource? _modelDownloadCancellation;
@@ -43,7 +44,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private string _logText = "";
     [ObservableProperty] private string _startupError = "";
     [ObservableProperty] private ShortcutOption _selectedShortcut = ShortcutSettings.Options[0];
-    [ObservableProperty] private string _shortcutSaveStatus = "";
+    [ObservableProperty] private string _settingsSaveStatus = "";
+    [ObservableProperty] private bool _isSavingSettings;
     [ObservableProperty] private bool _isPaused;
 
     public bool HasStartupError => !string.IsNullOrEmpty(StartupError);
@@ -62,7 +64,18 @@ public sealed partial class MainWindowViewModel : ObservableObject
         RefreshConfigLabels();
     }
 
-    public MainWindowViewModel(AppHost host)
+    public MainWindowViewModel(AppHost host, Func<string, AsrEngineKind, Task> applySettingsAsync)
+    {
+        _applySettingsAsync = applySettingsAsync;
+        AttachHost(host);
+    }
+
+    public bool CanEditSettings => !IsSavingSettings && !IsModelDownloading;
+    public bool CanSaveSettings => CanEditSettings && SelectedAsrModel is not null;
+
+    public void ReplaceHost(AppHost host) => AttachHost(host);
+
+    private void AttachHost(AppHost host)
     {
         _host = host;
         _config = host.Config;
@@ -72,7 +85,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
         host.Pipeline.StateChanged += (_, s) => Dispatcher.UIThread.Post(() => ApplyState(s));
         host.Pipeline.TextRecognized += (_, text) => Dispatcher.UIThread.Post(() => AppendHistory(text));
         host.LogEmitted += (_, line) => Dispatcher.UIThread.Post(() => AppendLog(line));
-
         ApplyState(host.Pipeline.State);
     }
 
@@ -91,8 +103,21 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedAsrModelChanged(AsrModelDefinition? value)
     {
+        OnPropertyChanged(nameof(CanSaveSettings));
         if (value is null) return;
         _ = DetectModelAsync(value);
+    }
+
+    partial void OnIsSavingSettingsChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanEditSettings));
+        OnPropertyChanged(nameof(CanSaveSettings));
+    }
+
+    partial void OnIsModelDownloadingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanEditSettings));
+        OnPropertyChanged(nameof(CanSaveSettings));
     }
 
     private async Task DetectModelAsync(AsrModelDefinition definition)
@@ -114,7 +139,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
             ModelStatusIcon = result.IsValid ? "✅" : "❌";
             ModelStatusText = result.IsValid
-                ? (_host?.IsModelLoadedFor(definition.Kind) == true ? "模型已加载" : "模型文件完整，重启后生效")
+                ? (_host?.IsModelLoadedFor(definition.Kind) == true ? "模型已加载" : "模型文件完整，保存后立即应用")
                 : result.Message;
         }
         catch (OperationCanceledException) { }
@@ -164,7 +189,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private async Task DownloadSelectedModelAsync()
     {
-        if (_host is null || SelectedAsrModel is null || IsModelDownloading) return;
+        if (_host is null || SelectedAsrModel is null || IsModelDownloading || IsSavingSettings) return;
         _modelDownloadCancellation = new CancellationTokenSource();
         IsModelDownloading = true;
         ModelDownloadStatus = "准备下载…";
@@ -178,9 +203,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
                     : value.Message ?? value.State.ToString();
             });
             await _host.DownloadModelAsync(SelectedAsrModel.Kind, progress, _modelDownloadCancellation.Token);
-            _host.SaveAsrModel(SelectedAsrModel.Kind);
             await DetectModelAsync(SelectedAsrModel);
-            ModelDownloadStatus = "模型已安装并保存，重启应用后生效";
+            ModelDownloadStatus = "模型已安装，点击“保存并应用”立即切换";
         }
         catch (OperationCanceledException) { ModelDownloadStatus = "下载已取消，可稍后继续"; }
         catch (Exception ex) { ModelDownloadStatus = $"下载失败：{ex.Message}"; }
@@ -210,22 +234,29 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private void ClearHistory() => History.Clear();
 
     [RelayCommand]
-    private void SaveShortcut()
+    private async Task SaveSettingsAsync()
     {
-        if (_host is null)
+        if (_host is null || _applySettingsAsync is null || SelectedAsrModel is null)
         {
-            ShortcutSaveStatus = "设计预览模式不可保存";
+            SettingsSaveStatus = "设计预览模式不可保存";
             return;
         }
 
+        IsSavingSettings = true;
+        SettingsSaveStatus = "正在保存并应用设置…";
         try
         {
-            _host.SaveShortcut(SelectedShortcut.Key);
-            ShortcutSaveStatus = "已保存，重启应用后生效";
+            await _applySettingsAsync(SelectedShortcut.Key, SelectedAsrModel.Kind);
+            await DetectModelAsync(SelectedAsrModel);
+            SettingsSaveStatus = "已保存并立即生效";
         }
         catch (Exception ex)
         {
-            ShortcutSaveStatus = $"保存失败：{ex.Message}";
+            SettingsSaveStatus = $"保存失败：{ex.Message}";
+        }
+        finally
+        {
+            IsSavingSettings = false;
         }
     }
 
