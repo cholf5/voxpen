@@ -124,7 +124,7 @@ public partial class App : Application
         }
     }
 
-    private async Task ApplySettingsAsync(string shortcutKey, AsrEngineKind asrEngine)
+    private async Task ApplySettingsAsync(IReadOnlyList<string> shortcutKeys, AsrEngineKind asrEngine)
     {
         await _settingsApplyGate.WaitAsync();
         try
@@ -132,9 +132,11 @@ public partial class App : Application
             if (_host is null) throw new InvalidOperationException("应用尚未初始化。");
 
             var previous = _host;
-            var previousShortcutKey = previous.Config.Shortcut.Key;
+            var previousShortcutKeys = previous.Config.Shortcut.Keys.Count > 0
+                ? previous.Config.Shortcut.Keys.ToArray()
+                : new[] { previous.Config.Shortcut.Key };
             var previousAsrEngine = previous.Config.Asr.Engine;
-            previous.SaveSettings(shortcutKey, asrEngine);
+            previous.SaveSettings(shortcutKeys, asrEngine);
             var candidate = AppHost.Create(AppContext.BaseDirectory);
             var previousDisposed = false;
             try
@@ -157,7 +159,7 @@ public partial class App : Application
                 }
                 else
                 {
-                    previous.SaveSettings(previousShortcutKey, previousAsrEngine);
+                    previous.SaveSettings(previousShortcutKeys, previousAsrEngine);
                 }
                 throw;
             }

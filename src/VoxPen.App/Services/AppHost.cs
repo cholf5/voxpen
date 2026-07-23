@@ -60,12 +60,15 @@ public sealed class AppHost : IDisposable
     private DebouncedFileWatcher? _hotwordWatcher;
 
     private bool _disposed;
+    private bool _wasPausedBeforeShortcutRecording;
+    private bool _shortcutRecordingActive;
 
     /// <summary>轻量日志通道：UI 订阅后填到"日志"面板。</summary>
     public event EventHandler<string>? LogEmitted;
+    public event EventHandler<HotkeyObservedEventArgs>? ShortcutKeyObserved;
 
     /// <summary>保存设置页选择；由 App 在预加载成功后切换到新宿主。</summary>
-    public void SaveSettings(string shortcutKey, AsrEngineKind asrEngine)
+    public void SaveSettings(IReadOnlyList<string> shortcutKeys, AsrEngineKind asrEngine)
     {
         var oldKey = Config.Shortcut.Key;
         var oldKeys = Config.Shortcut.Keys;
@@ -75,7 +78,7 @@ public sealed class AppHost : IDisposable
 
         try
         {
-            SettingsSelection.Apply(Config, shortcutKey, asrEngine);
+            SettingsSelection.Apply(Config, shortcutKeys, asrEngine);
             Config.Asr.ModelDir = ModelDirectoryResolver.Resolve(_appBaseDir, Config.Asr.ModelDir);
             File.WriteAllText(tempPath, JsonSerializer.Serialize(Config, SerializerOptions));
             File.Move(tempPath, _configPath, overwrite: true);
@@ -110,6 +113,24 @@ public sealed class AppHost : IDisposable
         var coordinator = new ModelInstallCoordinator(
             new HttpRangeModelPackageDownloader(), new CompressedModelPackageInstaller());
         return coordinator.InstallAsync(AsrModelCatalog.Get(kind), _appBaseDir, progress, cancellationToken);
+    }
+
+    /// <summary>录制快捷键时暂停听写，但继续运行全局 hook 以捕获用户实际按下的组合。</summary>
+    public void BeginShortcutRecording()
+    {
+        if (_shortcutRecordingActive) return;
+        _shortcutRecordingActive = true;
+        _wasPausedBeforeShortcutRecording = Pipeline.State == PipelineState.Paused;
+        Pipeline.Pause();
+        _hotkey.Start();
+    }
+
+    public void EndShortcutRecording()
+    {
+        if (!_shortcutRecordingActive) return;
+        _shortcutRecordingActive = false;
+        if (!_wasPausedBeforeShortcutRecording) Pipeline.Resume();
+        _wasPausedBeforeShortcutRecording = false;
     }
 
     /// <summary>
@@ -233,6 +254,8 @@ public sealed class AppHost : IDisposable
         var host = new AppHost(appBaseDir, configPath, config,
             hotkey, keyNames, capture, asr, output, foreground, archive,
             diary, phonemeCorrector, notifier, punctuator, pipeline, trashPunc);
+
+        hotkey.KeyObserved += (_, args) => host.ShortcutKeyObserved?.Invoke(host, args);
 
         // 组装后处理管线：punctuator → hot-rule (regex) → phoneme-rag → trash-punc
         pipeline.PostProcess = host.RunPostProcess;

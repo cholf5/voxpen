@@ -324,7 +324,8 @@ static async Task<int> RunInteractiveModeAsync(IAsrEngine engine, string? device
 static async Task<int> RunLiveModeAsync(IAsrEngine engine, AppConfig config, string? deviceName, int autoExitSecs)
 {
     using var capture = new WindowsAudioCapture(deviceName);
-    using var hotkey = new WindowsGlobalHotkey(config.Shortcut.Key, config.Shortcut.Suppress);
+    var shortcutKeys = config.Shortcut.Keys.Count > 0 ? config.Shortcut.Keys : [config.Shortcut.Key];
+    using var hotkey = new WindowsGlobalHotkey(shortcutKeys, config.Shortcut.Suppress);
     var textOutput = new WindowsTextOutput();
     var foreground = new WindowsForegroundApp();
 

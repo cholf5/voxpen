@@ -184,7 +184,7 @@
 
 **热重载：** `config.json` / `hot-rule.txt` / `hot.txt` 修改后 3 秒自动生效。快捷键、ASR 模型路径、标点模型路径、日记根目录的改动仍需重启。
 
-**`shortcut.keys` 支持的键名：** `caps_lock`、`f13`..`f16`、`x1`、`x2`、`mouse_left`、`mouse_right`、`mouse_middle`。非空数组时，其中任一键被按下都会触发。
+**`shortcut.keys` 支持的键名：** 常用键盘键（字母、数字、修饰键、功能键、导航键和标点键）以及 `x1`、`x2`、`mouse_left`、`mouse_right`、`mouse_middle`。数组表示一个组合，必须同时按住其中全部键才会触发。设置页可直接录制组合；单独字母键（如 `a`）会被拒绝，但 `left_ctrl + a` 可以使用。
 
 ### `hot-rule.txt`
 
@@ -243,9 +243,9 @@ GitHub|吉他不
 
 默认匹配阈值 0.85（低于则不替换）；相似阈值 0.6 用于 UI 提示。可在 `config.json` 里调，也可直接改 `hot.txt` —— 3 秒热重载。
 
-### 鼠标侧键 + 多快捷键
+### 鼠标侧键 + 组合快捷键
 
-`shortcut.keys` 支持任意组合，例如 `["caps_lock", "x2"]` 表示 CapsLock 和鼠标 X2（前进键）任一按下都会触发。
+`shortcut.keys` 支持任意组合，例如 `["left_ctrl", "left_shift", "a"]` 表示三键必须同时按住才会开始录音。`["caps_lock", "x2"]` 则要求 CapsLock 与鼠标 X2（前进键）同时按住。设置页点击“录制快捷键”后按下组合并全部松开即可录制；为避免正常输入误触，单独字母键不允许保存。
 
 ### Toast 通知
 

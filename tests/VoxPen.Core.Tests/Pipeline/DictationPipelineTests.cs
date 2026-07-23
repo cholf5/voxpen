@@ -100,6 +100,11 @@ public sealed class DictationPipelineTests
     {
         public event EventHandler<HotkeyEventArgs>? KeyPressed;
         public event EventHandler<HotkeyEventArgs>? KeyReleased;
+        public event EventHandler<HotkeyObservedEventArgs>? KeyObserved
+        {
+            add { }
+            remove { }
+        }
         public bool IsRunning => true;
         public void Start() { }
         public void Stop() { }

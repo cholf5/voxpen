@@ -6,7 +6,7 @@ namespace VoxPen.Platform.Windows.Hooks;
 
 /// <summary>
 /// 基于 SharpHook 的全局键盘 + 鼠标钩子。
-/// 支持一次绑定多个键（例如 CapsLock 与 侧键 X2 并存），任一命中即触发 <see cref="KeyPressed"/> / <see cref="KeyReleased"/>。
+/// 支持一次绑定多个键（例如 Ctrl + Shift + A）；只有全部按下时才触发 <see cref="KeyPressed"/>。
 ///
 /// 约束（来自 SharpHook 文档）：
 /// - <see cref="SimpleGlobalHook"/> 才支持在事件处理器中同步设置 <c>SuppressEvent</c>
@@ -22,17 +22,21 @@ namespace VoxPen.Platform.Windows.Hooks;
 public sealed class WindowsGlobalHotkey : IGlobalHotkey
 {
     private readonly SimpleGlobalHook _hook;
-    private readonly Dictionary<KeyCode, string> _keyMap;
-    private readonly Dictionary<MouseButton, string> _mouseMap;
+    private readonly HashSet<string> _configuredKeys;
+    private readonly HashSet<string> _pressedKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly bool _suppress;
     private Thread? _runThread;
     private bool _started;
     private bool _disposed;
+    private bool _combinationActive;
 
     public bool IsRunning => _started && !_disposed;
 
     public event EventHandler<HotkeyEventArgs>? KeyPressed;
     public event EventHandler<HotkeyEventArgs>? KeyReleased;
+
+    /// <summary>所有可规范化的物理键事件；仅供设置页录制快捷键，不会改变系统输入。</summary>
+    public event EventHandler<HotkeyObservedEventArgs>? KeyObserved;
 
     /// <summary>单键构造（向后兼容）。</summary>
     public WindowsGlobalHotkey(string keyName, bool suppress = true)
@@ -51,54 +55,21 @@ public sealed class WindowsGlobalHotkey : IGlobalHotkey
             throw new ArgumentException("至少需要一个键名", nameof(keyNames));
 
         _suppress = suppress;
-        _keyMap = new Dictionary<KeyCode, string>();
-        _mouseMap = new Dictionary<MouseButton, string>();
+        _configuredKeys = keyNames
+            .Where(raw => !string.IsNullOrWhiteSpace(raw))
+            .Select(raw => raw.Trim().ToLowerInvariant())
+            .Where(KeyNameMapper.IsMapped)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var raw in keyNames)
-        {
-            if (string.IsNullOrWhiteSpace(raw)) continue;
-            var name = raw.Trim().ToLowerInvariant();
-
-            var mouse = KeyNameMapper.MapMouse(name);
-            if (mouse.HasValue)
-            {
-                _mouseMap[mouse.Value] = name;
-                continue;
-            }
-
-            var kb = KeyNameMapper.Map(name);
-            if (kb.HasValue)
-            {
-                _keyMap[kb.Value] = name;
-                continue;
-            }
-
-            System.Diagnostics.Debug.WriteLine($"[WindowsGlobalHotkey] 无法识别的键名: '{raw}'，已跳过");
-        }
-
-        if (_keyMap.Count == 0 && _mouseMap.Count == 0)
+        if (_configuredKeys.Count == 0)
             throw new ArgumentException("没有任何可识别的键名", nameof(keyNames));
 
-        // 需要同时监听键盘 + 鼠标时用 All；只有键盘/鼠标时按需精简，减小 hook 负担
-        var hookType = (_keyMap.Count > 0, _mouseMap.Count > 0) switch
-        {
-            (true, true) => GlobalHookType.All,
-            (true, false) => GlobalHookType.Keyboard,
-            (false, true) => GlobalHookType.Mouse,
-            _ => GlobalHookType.All,
-        };
-        _hook = new SimpleGlobalHook(hookType);
-
-        if (_keyMap.Count > 0)
-        {
-            _hook.KeyPressed += OnKeyPressed;
-            _hook.KeyReleased += OnKeyReleased;
-        }
-        if (_mouseMap.Count > 0)
-        {
-            _hook.MousePressed += OnMousePressed;
-            _hook.MouseReleased += OnMouseReleased;
-        }
+        // 设置页录制需要观察任意键，因此统一监听键盘 + 鼠标。
+        _hook = new SimpleGlobalHook(GlobalHookType.All);
+        _hook.KeyPressed += OnKeyPressed;
+        _hook.KeyReleased += OnKeyReleased;
+        _hook.MousePressed += OnMousePressed;
+        _hook.MouseReleased += OnMouseReleased;
     }
 
     public void Start()
@@ -137,36 +108,53 @@ public sealed class WindowsGlobalHotkey : IGlobalHotkey
 
     private void OnKeyPressed(object? sender, KeyboardHookEventArgs e)
     {
-        if (!_keyMap.TryGetValue(e.Data.KeyCode, out var name)) return;
-        // 合成事件（含我们补发的 CapsLock）不进入流水线，也不被抑制，
-        // 直接放行给系统。这是唯一可靠的防自捕获手段。
         if (e.IsEventSimulated) return;
-        if (_suppress) e.SuppressEvent = true;
-        SafeInvoke(KeyPressed, name);
+        HandlePressed(KeyNameMapper.GetName(e.Data.KeyCode), suppress => e.SuppressEvent = suppress);
     }
 
     private void OnKeyReleased(object? sender, KeyboardHookEventArgs e)
     {
-        if (!_keyMap.TryGetValue(e.Data.KeyCode, out var name)) return;
         if (e.IsEventSimulated) return;
-        if (_suppress) e.SuppressEvent = true;
-        SafeInvoke(KeyReleased, name);
+        HandleReleased(KeyNameMapper.GetName(e.Data.KeyCode), suppress => e.SuppressEvent = suppress);
     }
 
     private void OnMousePressed(object? sender, MouseHookEventArgs e)
     {
-        if (!_mouseMap.TryGetValue(e.Data.Button, out var name)) return;
         if (e.IsEventSimulated) return;
-        if (_suppress) e.SuppressEvent = true;
-        SafeInvoke(KeyPressed, name);
+        HandlePressed(KeyNameMapper.GetMouseName(e.Data.Button), suppress => e.SuppressEvent = suppress);
     }
 
     private void OnMouseReleased(object? sender, MouseHookEventArgs e)
     {
-        if (!_mouseMap.TryGetValue(e.Data.Button, out var name)) return;
         if (e.IsEventSimulated) return;
-        if (_suppress) e.SuppressEvent = true;
-        SafeInvoke(KeyReleased, name);
+        HandleReleased(KeyNameMapper.GetMouseName(e.Data.Button), suppress => e.SuppressEvent = suppress);
+    }
+
+    private void HandlePressed(string? name, Action<bool> suppress)
+    {
+        if (name is null) return;
+        SafeObserve(name, true);
+        if (_configuredKeys.Contains(name) && _suppress) suppress(true);
+        _pressedKeys.Add(name);
+        if (!_combinationActive && _configuredKeys.IsSubsetOf(_pressedKeys))
+        {
+            _combinationActive = true;
+            SafeInvoke(KeyPressed, name);
+        }
+    }
+
+    private void HandleReleased(string? name, Action<bool> suppress)
+    {
+        if (name is null) return;
+        SafeObserve(name, false);
+        if (_configuredKeys.Contains(name) && _suppress) suppress(true);
+        var wasActive = _combinationActive;
+        _pressedKeys.Remove(name);
+        if (wasActive && !_configuredKeys.IsSubsetOf(_pressedKeys))
+        {
+            _combinationActive = false;
+            SafeInvoke(KeyReleased, name);
+        }
     }
 
     private void SafeInvoke(EventHandler<HotkeyEventArgs>? handler, string keyName)
@@ -181,36 +169,59 @@ public sealed class WindowsGlobalHotkey : IGlobalHotkey
             // 不能让异常穿透到原生回调
         }
     }
+
+    private void SafeObserve(string keyName, bool isPressed)
+    {
+        try { KeyObserved?.Invoke(this, new HotkeyObservedEventArgs(keyName, isPressed)); } catch { }
+    }
 }
 
 /// <summary>抽象键名 ↔ SharpHook KeyCode / MouseButton 双向映射。名称遵循原 CapsWriter 的 snake_case 风格。</summary>
-internal static class KeyNameMapper
+public static class KeyNameMapper
 {
-    public static KeyCode? Map(string name) => name switch
+    private static readonly Dictionary<string, KeyCode> KeyboardKeys = Enum.GetValues<KeyCode>()
+        .Select(code => (Code: code, Name: GetName(code)))
+        .Where(pair => pair.Name is not null)
+        .ToDictionary(pair => pair.Name!, pair => pair.Code, StringComparer.OrdinalIgnoreCase);
+
+    public static KeyCode? Map(string name) => KeyboardKeys.TryGetValue(NormalizeAlias(name), out var key) ? key : null;
+
+    public static bool IsMapped(string name) => Map(name).HasValue || MapMouse(name).HasValue;
+
+    public static string? GetName(KeyCode key) => NormalizeName(key.ToString());
+
+    public static string? GetMouseName(MouseButton button) => button switch
     {
-        "caps_lock" or "capslock" => KeyCode.VcCapsLock,
-        "num_lock" or "numlock" => KeyCode.VcNumLock,
-        "scroll_lock" or "scrolllock" => KeyCode.VcScrollLock,
-        "f1" => KeyCode.VcF1,
-        "f2" => KeyCode.VcF2,
-        "f3" => KeyCode.VcF3,
-        "f4" => KeyCode.VcF4,
-        "f5" => KeyCode.VcF5,
-        "f6" => KeyCode.VcF6,
-        "f7" => KeyCode.VcF7,
-        "f8" => KeyCode.VcF8,
-        "f9" => KeyCode.VcF9,
-        "f10" => KeyCode.VcF10,
-        "f11" => KeyCode.VcF11,
-        "f12" => KeyCode.VcF12,
-        "f13" => KeyCode.VcF13,
-        "f14" => KeyCode.VcF14,
-        "f15" => KeyCode.VcF15,
-        "space" => KeyCode.VcSpace,
-        "enter" => KeyCode.VcEnter,
-        "tab" => KeyCode.VcTab,
-        "esc" or "escape" => KeyCode.VcEscape,
+        MouseButton.Button1 => "mouse_left",
+        MouseButton.Button2 => "mouse_right",
+        MouseButton.Button3 => "mouse_middle",
+        MouseButton.Button4 => "x1",
+        MouseButton.Button5 => "x2",
         _ => null,
+    };
+
+    private static string? NormalizeName(string enumName)
+    {
+        if (!enumName.StartsWith("Vc", StringComparison.Ordinal) || enumName == "VcUndefined") return null;
+        var name = enumName[2..];
+        var builder = new System.Text.StringBuilder(name.Length + 4);
+        for (var index = 0; index < name.Length; index++)
+        {
+            if (index > 0 && char.IsUpper(name[index]) && !char.IsUpper(name[index - 1])) builder.Append('_');
+            builder.Append(char.ToLowerInvariant(name[index]));
+        }
+        return NormalizeAlias(builder.ToString());
+    }
+
+    private static string NormalizeAlias(string name) => name.Trim().ToLowerInvariant() switch
+    {
+        "capslock" => "caps_lock",
+        "numlock" => "num_lock",
+        "scrolllock" => "scroll_lock",
+        "escape" => "esc",
+        "left_control" => "left_ctrl",
+        "right_control" => "right_ctrl",
+        _ => name.Trim().ToLowerInvariant(),
     };
 
     /// <summary>鼠标侧键映射：Windows 上 XButton1 = SharpHook Button4，XButton2 = Button5。</summary>

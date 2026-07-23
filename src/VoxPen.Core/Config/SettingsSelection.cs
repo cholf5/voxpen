@@ -4,12 +4,15 @@ namespace VoxPen.Core.Config;
 public static class SettingsSelection
 {
     public static void Apply(AppConfig config, string shortcutKey, AsrEngineKind asrEngine)
+        => Apply(config, new[] { shortcutKey }, asrEngine);
+
+    public static void Apply(AppConfig config, IEnumerable<string> shortcutKeys, AsrEngineKind asrEngine)
     {
         ArgumentNullException.ThrowIfNull(config);
-        ArgumentException.ThrowIfNullOrWhiteSpace(shortcutKey);
+        var normalized = ShortcutSettings.NormalizeKeys(shortcutKeys);
 
-        config.Shortcut.Key = shortcutKey;
-        config.Shortcut.Keys = [shortcutKey];
+        config.Shortcut.Key = normalized[0];
+        config.Shortcut.Keys = normalized.ToList();
         config.Asr.Engine = asrEngine;
         config.Asr.ModelDir = AsrModelCatalog.Get(asrEngine).DefaultModelDir;
     }

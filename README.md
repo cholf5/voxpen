@@ -187,7 +187,7 @@ Auto-created on first launch next to the exe. Field names come from the upstream
 
 **Hot reload:** edits to `config.json` / `hot-rule.txt` / `hot.txt` are picked up within ~3 s. In Settings, saving a hotkey or ASR model selection applies it immediately; diary root changes still require a restart. Legacy `asr.modelDir` and `punctuation.modelDir` values are ignored.
 
-**Supported keys for `shortcut.keys`:** `caps_lock`, `f13`..`f16`, `x1`, `x2`, `mouse_left`, `mouse_right`, `mouse_middle`. Any non-empty combination triggers on either key.
+**Supported keys for `shortcut.keys`:** common keyboard keys (letters, numbers, modifiers, function/navigation/punctuation keys) plus `x1`, `x2`, `mouse_left`, `mouse_right`, and `mouse_middle`. Keys form one chord: all configured keys must be held together. The Settings page can record a chord; a bare letter such as `a` is rejected, while `left_ctrl + a` is allowed.
 
 ### `hot-rule.txt`
 
@@ -246,9 +246,9 @@ GitHub|吉他不
 
 Default match threshold 0.85 (below → no replacement). Similar threshold 0.6 is used for UI hints. Tune in `config.json` or edit `hot.txt` directly — hot-reloaded in ~3 s.
 
-### Mouse side buttons & multi-hotkey
+### Mouse side buttons & combination hotkeys
 
-`shortcut.keys` accepts any combination — e.g. `["caps_lock", "x2"]` fires on either CapsLock or the mouse "forward" button.
+`shortcut.keys` accepts a chord — e.g. `["left_ctrl", "left_shift", "a"]` starts recording only while all three keys are held. `["caps_lock", "x2"]` requires CapsLock and the mouse "forward" button together. Use **Record hotkey** in Settings to capture a chord; a standalone letter is not accepted to prevent normal typing from triggering dictation.
 
 ### Toast notifications
 

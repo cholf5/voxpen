@@ -2,6 +2,8 @@ using FluentAssertions;
 using System.Text.Json;
 using Xunit;
 using VoxPen.Core.Config;
+using VoxPen.Platform.Windows.Hooks;
+using SharpHook.Data;
 
 namespace VoxPen.Core.Tests.Config;
 
@@ -67,5 +69,44 @@ public sealed class ShortcutSettingsTests
 
         action.Should().Throw<ArgumentException>();
         File.Exists(path).Should().BeFalse();
+    }
+
+    [Fact]
+    public void NormalizeKeys_should_keep_a_combination_and_reject_a_single_letter()
+    {
+        ShortcutSettings.NormalizeKeys(["left_ctrl", "left_shift", "a", "left_ctrl"])
+            .Should().Equal("left_ctrl", "left_shift", "a");
+
+        var action = () => ShortcutSettings.NormalizeKeys(["a"]);
+
+        action.Should().Throw<ArgumentException>().WithMessage("*单独使用字母键*");
+    }
+
+    [Fact]
+    public void Save_should_write_all_combination_keys_and_keep_the_first_as_legacy_key()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"voxpen-config-{Guid.NewGuid():N}.json");
+        try
+        {
+            ShortcutSettings.Save(path, new AppConfig(), ["left_ctrl", "left_shift", "a"]);
+
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            var shortcut = document.RootElement.GetProperty("shortcut");
+            shortcut.GetProperty("key").GetString().Should().Be("left_ctrl");
+            shortcut.GetProperty("keys").EnumerateArray().Select(x => x.GetString())
+                .Should().Equal("left_ctrl", "left_shift", "a");
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void KeyNameMapper_should_map_modifiers_and_letter_keys_used_by_recording()
+    {
+        KeyNameMapper.Map("left_ctrl").Should().Be(KeyCode.VcLeftControl);
+        KeyNameMapper.Map("a").Should().Be(KeyCode.VcA);
+        KeyNameMapper.GetName(KeyCode.VcRightShift).Should().Be("right_shift");
     }
 }

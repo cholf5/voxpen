@@ -11,6 +11,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using VoxPen.App.Services;
 using VoxPen.Core.Config;
+using VoxPen.Core.Abstractions;
 using VoxPen.Core.Models;
 using VoxPen.Core.Pipeline;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -25,7 +26,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private AppHost? _host;
     private AppConfig _config = new();
-    private readonly Func<string, AsrEngineKind, Task>? _applySettingsAsync;
+    private readonly Func<IReadOnlyList<string>, AsrEngineKind, Task>? _applySettingsAsync;
     private readonly StringBuilder _log = new();
     private CancellationTokenSource? _modelCheckCancellation;
     private CancellationTokenSource? _modelDownloadCancellation;
@@ -43,7 +44,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private string _pasteAppsLabel = "";
     [ObservableProperty] private string _logText = "";
     [ObservableProperty] private string _startupError = "";
-    [ObservableProperty] private ShortcutOption _selectedShortcut = ShortcutSettings.Options[0];
+    [ObservableProperty] private string _shortcutDisplay = "Caps Lock";
+    [ObservableProperty] private string _shortcutRecordingStatus = "";
+    [ObservableProperty] private bool _isRecordingShortcut;
     [ObservableProperty] private string _settingsSaveStatus = "";
     [ObservableProperty] private bool _isSavingSettings;
     [ObservableProperty] private bool _isPaused;
@@ -53,8 +56,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public bool IsExiting { get; private set; }
 
     public ObservableCollection<HistoryEntry> History { get; } = new();
-    public IReadOnlyList<ShortcutOption> ShortcutOptions => ShortcutSettings.Options;
     public IReadOnlyList<AsrModelDefinition> AsrModels => AsrModelCatalog.All;
+    private List<string> RecordedShortcutKeys { get; } = [ShortcutSettings.DefaultKey];
+    private HashSet<string> PressedRecordedKeys { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>设计时无参构造，供 Avalonia XAML 预览器使用。</summary>
     public MainWindowViewModel()
@@ -64,13 +68,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
         RefreshConfigLabels();
     }
 
-    public MainWindowViewModel(AppHost host, Func<string, AsrEngineKind, Task> applySettingsAsync)
+    public MainWindowViewModel(AppHost host, Func<IReadOnlyList<string>, AsrEngineKind, Task> applySettingsAsync)
     {
         _applySettingsAsync = applySettingsAsync;
         AttachHost(host);
     }
 
-    public bool CanEditSettings => !IsSavingSettings && !IsModelDownloading;
+    public bool CanEditSettings => !IsSavingSettings && !IsModelDownloading && !IsRecordingShortcut;
     public bool CanSaveSettings => CanEditSettings && SelectedAsrModel is not null;
 
     public void ReplaceHost(AppHost host) => AttachHost(host);
@@ -85,16 +89,17 @@ public sealed partial class MainWindowViewModel : ObservableObject
         host.Pipeline.StateChanged += (_, s) => Dispatcher.UIThread.Post(() => ApplyState(s));
         host.Pipeline.TextRecognized += (_, text) => Dispatcher.UIThread.Post(() => AppendHistory(text));
         host.LogEmitted += (_, line) => Dispatcher.UIThread.Post(() => AppendLog(line));
+        host.ShortcutKeyObserved += (_, args) => Dispatcher.UIThread.Post(() => ObserveShortcutKey(args));
         ApplyState(host.Pipeline.State);
     }
 
     private void RefreshConfigLabels()
     {
-        var configuredKey = _config.Shortcut.Keys.FirstOrDefault() ?? _config.Shortcut.Key;
-        SelectedShortcut = ShortcutSettings.Options.FirstOrDefault(option =>
-            string.Equals(option.Key, configuredKey, StringComparison.OrdinalIgnoreCase))
-            ?? ShortcutSettings.Options[0];
-        ShortcutHint = $"长按 {SelectedShortcut.DisplayName} 说话，松开上屏";
+        var configuredKeys = _config.Shortcut.Keys.Count > 0 ? _config.Shortcut.Keys : [_config.Shortcut.Key];
+        RecordedShortcutKeys.Clear();
+        RecordedShortcutKeys.AddRange(ShortcutSettings.NormalizeKeys(configuredKeys));
+        ShortcutDisplay = ShortcutSettings.GetDisplayName(RecordedShortcutKeys);
+        ShortcutHint = $"长按 {ShortcutDisplay} 说话，松开上屏";
         OutputModeLabel = _config.Output.Mode == OutputMode.Paste ? "剪贴板粘贴" : "模拟打字";
         PasteAppsLabel = _config.Output.PasteApps.Count == 0
             ? "（无）"
@@ -118,6 +123,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(CanEditSettings));
         OnPropertyChanged(nameof(CanSaveSettings));
+    }
+
+    partial void OnIsRecordingShortcutChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanEditSettings));
     }
 
     private async Task DetectModelAsync(AsrModelDefinition definition)
@@ -246,7 +256,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         SettingsSaveStatus = "正在保存并应用设置…";
         try
         {
-            await _applySettingsAsync(SelectedShortcut.Key, SelectedAsrModel.Kind);
+            await _applySettingsAsync(RecordedShortcutKeys, SelectedAsrModel.Kind);
             await DetectModelAsync(SelectedAsrModel);
             SettingsSaveStatus = "已保存并立即生效";
         }
@@ -259,6 +269,68 @@ public sealed partial class MainWindowViewModel : ObservableObject
             IsSavingSettings = false;
         }
     }
+
+    [RelayCommand]
+    private void StartShortcutRecording()
+    {
+        if (!CanEditSettings) return;
+        PressedRecordedKeys.Clear();
+        _recordedDuringCapture.Clear();
+        _host?.BeginShortcutRecording();
+        IsRecordingShortcut = true;
+        ShortcutRecordingStatus = "请同时按下所需组合键，然后全部松开。单独字母键不会被接受。";
+    }
+
+    [RelayCommand]
+    private void CancelShortcutRecording()
+    {
+        IsRecordingShortcut = false;
+        PressedRecordedKeys.Clear();
+        _recordedDuringCapture.Clear();
+        _host?.EndShortcutRecording();
+        ShortcutRecordingStatus = "已取消快捷键录制。";
+    }
+
+    private void ObserveShortcutKey(HotkeyObservedEventArgs args)
+    {
+        if (!IsRecordingShortcut) return;
+        if (args.IsPressed)
+        {
+            PressedRecordedKeys.Add(args.Key);
+            if (!_recordedDuringCapture.Contains(args.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                _recordedDuringCapture.Add(args.Key);
+            }
+            return;
+        }
+
+        PressedRecordedKeys.Remove(args.Key);
+        if (PressedRecordedKeys.Count != 0) return;
+
+        try
+        {
+            var keys = ShortcutSettings.NormalizeKeys(PressedRecordedKeys.Count == 0
+                ? _recordedDuringCapture
+                : PressedRecordedKeys);
+            RecordedShortcutKeys.Clear();
+            RecordedShortcutKeys.AddRange(keys);
+            ShortcutDisplay = ShortcutSettings.GetDisplayName(keys);
+            ShortcutHint = $"长按 {ShortcutDisplay} 说话，松开上屏";
+            ShortcutRecordingStatus = "快捷键已录制，点击“保存并应用”生效。";
+        }
+        catch (ArgumentException ex)
+        {
+            ShortcutRecordingStatus = ex.Message;
+        }
+        finally
+        {
+            _recordedDuringCapture.Clear();
+            IsRecordingShortcut = false;
+            _host?.EndShortcutRecording();
+        }
+    }
+
+    private readonly List<string> _recordedDuringCapture = [];
 
     [RelayCommand]
     private void TogglePause()

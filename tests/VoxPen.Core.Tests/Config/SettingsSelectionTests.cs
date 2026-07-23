@@ -18,4 +18,15 @@ public sealed class SettingsSelectionTests
         config.Asr.Engine.Should().Be(AsrEngineKind.SenseVoice);
         config.Asr.ModelDir.Should().Be(AsrModelCatalog.Get(AsrEngineKind.SenseVoice).DefaultModelDir);
     }
+
+    [Fact]
+    public void Apply_keeps_combination_keys_and_their_first_key_for_legacy_configs()
+    {
+        var config = new AppConfig();
+
+        SettingsSelection.Apply(config, ["left_ctrl", "a"], AsrEngineKind.SenseVoice);
+
+        config.Shortcut.Key.Should().Be("left_ctrl");
+        config.Shortcut.Keys.Should().Equal("left_ctrl", "a");
+    }
 }

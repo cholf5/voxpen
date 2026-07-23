@@ -12,6 +12,9 @@ public interface IGlobalHotkey : IDisposable
     /// <summary>物理按键松开。</summary>
     event EventHandler<HotkeyEventArgs>? KeyReleased;
 
+    /// <summary>所有可规范化物理键的观测事件。用于录制快捷键，不会影响实际按键处理。</summary>
+    event EventHandler<HotkeyObservedEventArgs>? KeyObserved;
+
     /// <summary>开始监听。可多次调用以更新绑定。</summary>
     void Start();
 
@@ -30,4 +33,17 @@ public sealed class HotkeyEventArgs : EventArgs
 
     /// <summary>事件发生的 UTC 时间戳（用于计算按住时长）。</summary>
     public DateTime TimestampUtc { get; init; } = DateTime.UtcNow;
+}
+
+/// <summary>供快捷键录制使用的原始按键观测负载。</summary>
+public sealed class HotkeyObservedEventArgs : EventArgs
+{
+    public HotkeyObservedEventArgs(string key, bool isPressed)
+    {
+        Key = key;
+        IsPressed = isPressed;
+    }
+
+    public string Key { get; }
+    public bool IsPressed { get; }
 }

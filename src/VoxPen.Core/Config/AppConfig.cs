@@ -44,8 +44,8 @@ public sealed class ShortcutConfig
     public string Key { get; set; } = "caps_lock";
 
     /// <summary>
-    /// 多快捷键绑定，例如 <c>["caps_lock", "x2"]</c>。非空时优先于 <see cref="Key"/>。
-    /// 支持 <c>caps_lock/f13/f14/f15/f16/x1/x2</c> 等；具体清单由平台层的 KeyNameMapper 决定。
+    /// 组合快捷键绑定，例如 <c>["left_ctrl", "left_shift", "a"]</c>。非空时优先于 <see cref="Key"/>。
+    /// 列表中的所有键须同时按下；具体可识别键由平台层的 KeyNameMapper 决定。
     /// </summary>
     public List<string> Keys { get; set; } = new();
 
