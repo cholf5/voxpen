@@ -1,4 +1,5 @@
 using VoxPen.Core.Abstractions;
+using VoxPen.Core.Config;
 using SharpHook;
 using SharpHook.Data;
 
@@ -23,12 +24,11 @@ public sealed class WindowsGlobalHotkey : IGlobalHotkey
 {
     private readonly SimpleGlobalHook _hook;
     private readonly HashSet<string> _configuredKeys;
-    private readonly HashSet<string> _pressedKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ShortcutChord _chord;
     private readonly bool _suppress;
     private Thread? _runThread;
     private bool _started;
     private bool _disposed;
-    private bool _combinationActive;
 
     public bool IsRunning => _started && !_disposed;
 
@@ -63,6 +63,7 @@ public sealed class WindowsGlobalHotkey : IGlobalHotkey
 
         if (_configuredKeys.Count == 0)
             throw new ArgumentException("没有任何可识别的键名", nameof(keyNames));
+        _chord = new ShortcutChord(_configuredKeys);
 
         // 设置页录制需要观察任意键，因此统一监听键盘 + 鼠标。
         _hook = new SimpleGlobalHook(GlobalHookType.All);
@@ -134,11 +135,9 @@ public sealed class WindowsGlobalHotkey : IGlobalHotkey
     {
         if (name is null) return;
         SafeObserve(name, true);
-        if (_configuredKeys.Contains(name) && _suppress) suppress(true);
-        _pressedKeys.Add(name);
-        if (!_combinationActive && _configuredKeys.IsSubsetOf(_pressedKeys))
+        if (_chord.Press(name))
         {
-            _combinationActive = true;
+            if (_suppress) suppress(true);
             SafeInvoke(KeyPressed, name);
         }
     }
@@ -147,12 +146,9 @@ public sealed class WindowsGlobalHotkey : IGlobalHotkey
     {
         if (name is null) return;
         SafeObserve(name, false);
-        if (_configuredKeys.Contains(name) && _suppress) suppress(true);
-        var wasActive = _combinationActive;
-        _pressedKeys.Remove(name);
-        if (wasActive && !_configuredKeys.IsSubsetOf(_pressedKeys))
+        if (_chord.Release(name))
         {
-            _combinationActive = false;
+            if (_suppress) suppress(true);
             SafeInvoke(KeyReleased, name);
         }
     }
