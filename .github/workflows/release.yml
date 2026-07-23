@@ -68,57 +68,11 @@ jobs:
       - name: Test
         run: dotnet test tests/VoxPen.Core.Tests/VoxPen.Core.Tests.csproj --no-restore -c Release --logger "console;verbosity=normal"
 
-      - name: Publish single-file exe
-        # 不加 --no-restore：让 publish 自己带上 -r win-x64 做 RID-aware restore。
+      - name: Package release archive
+        shell: pwsh
+        # 脚本不传 --no-restore：让 publish 自己带上 -r win-x64 做 RID-aware restore。
         # NuGet 包已缓存，实际只是 obj/assets 重算，代价 <10 秒。
-        shell: pwsh
-        run: |
-          dotnet publish src/VoxPen.App/VoxPen.App.csproj `
-            -c Release -r win-x64 --self-contained true `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:EnableCompressionInSingleFile=true `
-            -p:Version=$env:VERSION `
-            -p:AssemblyVersion=$env:VERSION_NUMERIC.0 `
-            -p:FileVersion=$env:VERSION_NUMERIC.0 `
-            -p:InformationalVersion=$env:VERSION `
-            -o publish/win-x64
-
-      - name: Stage release contents
-        shell: pwsh
-        run: |
-          $stage = "staging/$env:STAGE_NAME"
-          New-Item -ItemType Directory -Path $stage -Force | Out-Null
-
-          Copy-Item publish/win-x64/VoxPen.App.exe $stage/
-          if (Test-Path publish/win-x64/hot-rule.txt) {
-            Copy-Item publish/win-x64/hot-rule.txt $stage/
-          } elseif (Test-Path hot-rule.txt) {
-            Copy-Item hot-rule.txt $stage/
-          }
-          if (Test-Path hot.txt)            { Copy-Item hot.txt            $stage/ }
-          if (Test-Path config.sample.json) { Copy-Item config.sample.json $stage/ }
-          Copy-Item README.md      $stage/
-          Copy-Item FIRST-RUN.txt  $stage/
-
-          Get-ChildItem $stage | Format-Table -AutoSize
-
-      - name: Compress zip
-        shell: pwsh
-        run: |
-          $stage = "staging/$env:STAGE_NAME"
-          $zip   = "$env:STAGE_NAME.zip"
-          Compress-Archive -Path $stage -DestinationPath $zip -Force
-          $size = (Get-Item $zip).Length / 1MB
-          Write-Host ("Zip size: {0:N1} MB" -f $size)
-
-      - name: SHA256
-        shell: pwsh
-        run: |
-          $zip = "$env:STAGE_NAME.zip"
-          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
-          "$hash  $zip" | Out-File -FilePath "$zip.sha256" -Encoding ascii
-          Write-Host "SHA256: $hash"
+        run: ./scripts/package.ps1 -Version $env:VERSION
 
       - name: Generate release notes
         shell: pwsh

@@ -278,15 +278,16 @@ dotnet build src/VoxPen.App
 ### 打包单文件 exe（Windows）
 
 ```bash
-dotnet publish src/VoxPen.App/VoxPen.App.csproj ^
-  -c Release -r win-x64 --self-contained true ^
-  -p:PublishSingleFile=true ^
-  -p:IncludeNativeLibrariesForSelfExtract=true ^
-  -p:EnableCompressionInSingleFile=true ^
-  -o publish/win-x64
+# 自动生成开发版本号，便于本地预览发布包
+pwsh -File scripts/package.ps1
+
+# 指定正式或预发布版本号
+pwsh -File scripts/package.ps1 -Version 0.1.0-rc.1
 ```
 
-产物：`publish/win-x64/VoxPen.App.exe`（P7 起约 100 MB，P6 时约 53 MB —— 增量来自 NAudio + Toolkit.Uwp.Notifications + ToolGood.Words.Pinyin 等 P7 依赖）。exe 内自包含 .NET 运行时 + sherpa-onnx / PortAudio / SharpHook / MediaFoundation 全部原生依赖。
+脚本会生成 `VoxPen-<version>-win-x64.zip` 和对应的 `.sha256`，并把未压缩的发布内容放在 `staging/`。未指定版本时会自动使用类似 `0.1.0-dev.20260724153000` 的开发版本号。GitHub Release 使用同一脚本打包。
+
+压缩包内的 `VoxPen.App.exe`（P7 起约 100 MB，P6 时约 53 MB —— 增量来自 NAudio + Toolkit.Uwp.Notifications + ToolGood.Words.Pinyin 等 P7 依赖）自包含 .NET 运行时 + sherpa-onnx / PortAudio / SharpHook / MediaFoundation 全部原生依赖。
 
 publish 目录会自动带上 `hot-rule.txt`；`config.json` 首次运行在 exe 同目录自动生成默认值。用户只需要自己放 `models/paraformer/`。
 
