@@ -62,6 +62,8 @@ publish/
 staging/
 VoxPen-*-win-x64.zip
 VoxPen-*-win-x64.zip.sha256
+VoxPen-*-win-x64-*.zip
+VoxPen-*-win-x64-*.zip.sha256
 *.pdb
 
 # User data (do NOT commit local config or logs)

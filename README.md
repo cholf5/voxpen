@@ -285,7 +285,10 @@ pwsh -File scripts/package.ps1
 pwsh -File scripts/package.ps1 -Version 0.1.0-rc.1
 ```
 
-脚本会生成 `VoxPen-<version>-win-x64.zip` 和对应的 `.sha256`，并把未压缩的发布内容放在 `staging/`。未指定版本时会自动使用类似 `0.1.0-dev.20260724153000` 的开发版本号。GitHub Release 使用同一脚本打包。
+脚本会生成两种 zip 及各自的 `.sha256`，并把未压缩的发布内容放在 `staging/`。未指定版本时会自动使用类似 `0.1.0-dev.20260724153000` 的开发版本号；GitHub Release 使用同一脚本打包。
+
+- `VoxPen-<version>-win-x64.zip` —— **推荐给所有用户**。自包含 .NET 8，解压即可运行。
+- `VoxPen-<version>-win-x64-requires-dotnet-8-runtime.zip` —— 更小，但需要先安装 **.NET 8 x64 Runtime**。未安装时，启动提示会提供下载链接。
 
 压缩包内的 `VoxPen.App.exe`（P7 起约 100 MB，P6 时约 53 MB —— 增量来自 NAudio + Toolkit.Uwp.Notifications + ToolGood.Words.Pinyin 等 P7 依赖）自包含 .NET 运行时 + sherpa-onnx / PortAudio / SharpHook / MediaFoundation 全部原生依赖。
 

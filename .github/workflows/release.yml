@@ -153,9 +153,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $zip = "$env:STAGE_NAME.zip"
+          $runtimeZip = "$env:STAGE_NAME-requires-dotnet-8-runtime.zip"
           $ghArgs = @(
             'release','create',"v$env:VERSION",
-            $zip,"$zip.sha256",
+            $zip,"$zip.sha256",$runtimeZip,"$runtimeZip.sha256",
             '--title',"VoxPen v$env:VERSION",
             '--notes-file','notes.md',
             '--target',$env:GITHUB_SHA

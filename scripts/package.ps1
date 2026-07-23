@@ -31,50 +31,65 @@ if ($Version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$') {
 }
 
 $numericVersion = $Version -replace '-.*', ''
-$stageName = "VoxPen-$Version-win-x64"
-$publishDirectory = 'publish/win-x64'
-$stageDirectory = Join-Path 'staging' $stageName
-$zipPath = "$stageName.zip"
-$sha256Path = "$zipPath.sha256"
+
+function Publish-Package {
+    param(
+        [string]$PackageSuffix,
+        [bool]$SelfContained
+    )
+
+    $packageName = "VoxPen-$Version-win-x64$PackageSuffix"
+    $publishDirectory = "publish/win-x64$PackageSuffix"
+    $stageDirectory = Join-Path 'staging' $packageName
+    $zipPath = "$packageName.zip"
+    $sha256Path = "$zipPath.sha256"
+    $selfContainedArgument = $SelfContained.ToString().ToLowerInvariant()
+
+    $publishArguments = @(
+        'publish', 'src/VoxPen.App/VoxPen.App.csproj',
+        '-c', 'Release', '-r', 'win-x64', '--self-contained', $selfContainedArgument,
+        '-p:PublishSingleFile=true',
+        '-p:IncludeNativeLibrariesForSelfExtract=true',
+        "-p:Version=$Version",
+        "-p:AssemblyVersion=$numericVersion.0",
+        "-p:FileVersion=$numericVersion.0",
+        "-p:InformationalVersion=$Version",
+        '-o', $publishDirectory
+    )
+    if ($SelfContained) { $publishArguments += '-p:EnableCompressionInSingleFile=true' }
+
+    & dotnet @publishArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet publish 失败，退出码：$LASTEXITCODE"
+    }
+
+    if (Test-Path $stageDirectory) {
+        Remove-Item -LiteralPath $stageDirectory -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
+
+    Copy-Item (Join-Path $publishDirectory 'VoxPen.App.exe') $stageDirectory
+    if (Test-Path (Join-Path $publishDirectory 'hot-rule.txt')) {
+        Copy-Item (Join-Path $publishDirectory 'hot-rule.txt') $stageDirectory
+    } elseif (Test-Path 'hot-rule.txt') {
+        Copy-Item 'hot-rule.txt' $stageDirectory
+    }
+    if (Test-Path 'hot.txt') { Copy-Item 'hot.txt' $stageDirectory }
+    if (Test-Path 'config.sample.json') { Copy-Item 'config.sample.json' $stageDirectory }
+    Copy-Item 'README.md' $stageDirectory
+    Copy-Item 'FIRST-RUN.txt' $stageDirectory
+
+    Compress-Archive -Path $stageDirectory -DestinationPath $zipPath -Force
+    $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash
+    Set-Content -LiteralPath $sha256Path -Value "$hash  $zipPath" -Encoding ascii
+
+    Get-ChildItem $stageDirectory | Format-Table -AutoSize
+    $size = (Get-Item $zipPath).Length / 1MB
+    Write-Host ("Zip size: {0:N1} MB" -f $size)
+    Write-Host "SHA256: $hash"
+    Write-Host "已生成：$zipPath、$sha256Path"
+}
 
 Write-Host "打包版本：$Version"
-
-& dotnet publish src/VoxPen.App/VoxPen.App.csproj `
-    -c Release -r win-x64 --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:EnableCompressionInSingleFile=true `
-    -p:Version=$Version `
-    -p:AssemblyVersion=$numericVersion.0 `
-    -p:FileVersion=$numericVersion.0 `
-    -p:InformationalVersion=$Version `
-    -o $publishDirectory
-if ($LASTEXITCODE -ne 0) {
-    throw "dotnet publish 失败，退出码：$LASTEXITCODE"
-}
-
-if (Test-Path $stageDirectory) {
-    Remove-Item -LiteralPath $stageDirectory -Recurse -Force
-}
-New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
-
-Copy-Item (Join-Path $publishDirectory 'VoxPen.App.exe') $stageDirectory
-if (Test-Path (Join-Path $publishDirectory 'hot-rule.txt')) {
-    Copy-Item (Join-Path $publishDirectory 'hot-rule.txt') $stageDirectory
-} elseif (Test-Path 'hot-rule.txt') {
-    Copy-Item 'hot-rule.txt' $stageDirectory
-}
-if (Test-Path 'hot.txt') { Copy-Item 'hot.txt' $stageDirectory }
-if (Test-Path 'config.sample.json') { Copy-Item 'config.sample.json' $stageDirectory }
-Copy-Item 'README.md' $stageDirectory
-Copy-Item 'FIRST-RUN.txt' $stageDirectory
-
-Compress-Archive -Path $stageDirectory -DestinationPath $zipPath -Force
-$hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash
-Set-Content -LiteralPath $sha256Path -Value "$hash  $zipPath" -Encoding ascii
-
-Get-ChildItem $stageDirectory | Format-Table -AutoSize
-$size = (Get-Item $zipPath).Length / 1MB
-Write-Host ("Zip size: {0:N1} MB" -f $size)
-Write-Host "SHA256: $hash"
-Write-Host "已生成：$zipPath、$sha256Path"
+Publish-Package -PackageSuffix '' -SelfContained $true
+Publish-Package -PackageSuffix '-requires-dotnet-8-runtime' -SelfContained $false
